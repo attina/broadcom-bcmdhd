@@ -1,7 +1,7 @@
 /*
  * bcmrand.h.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -43,15 +43,15 @@
 #ifndef	_bcmrand_h_
 #define	_bcmrand_h_
 
-/* When HOST driver is for PCIE dongle image, we suppose the HOST must provide the entropy
+/* When HOST driver is for SDIO/PCIE dongle image, we suppose the HOST must provide the entropy
  * input if it does not define the macro BCM_RNG_NO_HOST_ENTROPY
  */
-#if defined(BCMPCIEDEV) && !defined(BCMFUZZ)
+#if (defined(BCMPCIEDEV) || defined(BCMSDIODEV)) && !defined(BCMFUZZ)
 #if !defined(BCM_RNG_HOST_ENTROPY) && !defined(BCM_RNG_NO_HOST_ENTROPY)
 #define BCM_RNG_HOST_ENTROPY
 #define BCM_RNG_PCIEDEV_DEFAULT
 #endif /* !BCM_RNG_HOST_ENTROPY && !BCM_RNG_NO_HOST_ENTROPY */
-#endif /* BCMPCIEDEV */
+#endif /* (BCMPCIEDEV || BCMSDIODEV) && !BCMFUZZ */
 
 /* the format of current TCM layout during boot
  *

@@ -1,7 +1,7 @@
 /*
  * Fundamental constants relating to TCP Protocol
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -61,12 +61,12 @@
 #define TCP_PORT_LEN		2	/* TCP port field length */
 
 /* 8bit TCP flag field */
-#define TCP_FLAG_URG            0x20
-#define TCP_FLAG_ACK            0x10
-#define TCP_FLAG_PSH            0x08
-#define TCP_FLAG_RST            0x04
-#define TCP_FLAG_SYN            0x02
-#define TCP_FLAG_FIN            0x01
+#define DHD_TCP_FLAG_URG            0x20
+#define DHD_TCP_FLAG_ACK            0x10
+#define DHD_TCP_FLAG_PSH            0x08
+#define DHD_TCP_FLAG_RST            0x04
+#define DHD_TCP_FLAG_SYN            0x02
+#define DHD_TCP_FLAG_FIN            0x01
 
 #define TCP_HLEN_MASK           0xf000
 #define TCP_HLEN_SHIFT          12

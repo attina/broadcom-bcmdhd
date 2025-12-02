@@ -2,10 +2,12 @@
 #ifndef _wl_android_ext_
 #define _wl_android_ext_
 
-typedef struct wl_chan_info {
+#include <wlioctl.h>
+
+typedef struct wl_ext_chan_info {
 	uint band;
 	uint16 chan;
-} wl_chan_info_t;
+} wl_ext_chan_info_t;
 
 typedef struct wl_chan_type {
 	bool nodfs;
@@ -27,12 +29,6 @@ typedef struct wl_scan_info {
 	int scan_time;
 } wl_scan_info_t;
 
-typedef struct bcol_gtk_para {
-	int enable;
-	int ptk_len;
-	char ptk[64];
-	char replay[8];
-} bcol_gtk_para_t;
 #define ACS_FW_BIT		(1<<0)
 #define ACS_DRV_BIT		(1<<1)
 int wl_ext_autochannel(struct net_device *dev, uint acs, uint32 band,
@@ -40,7 +36,14 @@ int wl_ext_autochannel(struct net_device *dev, uint acs, uint32 band,
 chanspec_band_t wl_ext_wlcband_to_chanspec_band(int band);
 int wl_android_ext_priv_cmd(struct net_device *net, char *command, int total_len,
 	int *bytes_written);
-void wl_ext_get_sec(struct net_device *dev, int ifmode, char *sec, int total_len, bool dump);
+void wl_ext_get_vif_macaddr(struct net_device *net, int wl_iftype, int ifidx, u8 *mac_addr);
+void wl_ext_get_sec(struct net_device *dev, char *sec, int total_len, bool dump);
+#ifdef WL_MLO
+void wl_ext_get_mlo(struct net_device *dev, char *mlo_str, int total_len, bool dump);
+#else
+static inline void wl_ext_get_mlo(struct net_device *dev, char *mlo_str, int total_len, bool dump)
+	{ return; }
+#endif /* WL_MLO */
 bool wl_ext_check_scan(struct net_device *dev, dhd_pub_t *dhdp);
 int wl_ext_set_scan_time(struct net_device *dev, int scan_time,
 	uint32 scan_get, uint32 scan_set);
@@ -58,22 +61,26 @@ void wl_ext_genl_deinit(struct net_device *net);
 #define strtoul(nptr, endptr, base) bcm_strtoul((nptr), (endptr), (base))
 #endif
 int wl_ext_ioctl(struct net_device *dev, u32 cmd, void *arg, u32 len, u32 set);
+int wl_ext_link_ioctl(struct net_device *dev, u8 link_idx, u32 cmd, void *arg, u32 len, u32 set);
 int wl_ext_iovar_getint(struct net_device *dev, s8 *iovar, s32 *val);
 int wl_ext_iovar_setint(struct net_device *dev, s8 *iovar, s32 val);
 int wl_ext_iovar_getbuf(struct net_device *dev, s8 *iovar_name,
 	void *param, s32 paramlen, void *buf, s32 buflen, struct mutex* buf_sync);
+int wl_ext_link_iovar_getbuf(struct net_device *dev, u8 link_idx, s8 *iovar_name,
+	const void *param, u32 paramlen, void *buf, u32 buflen, struct mutex* buf_sync);
 int wl_ext_iovar_setbuf(struct net_device *dev, s8 *iovar_name,
 	void *param, s32 paramlen, void *buf, s32 buflen, struct mutex* buf_sync);
 int wl_ext_iovar_setbuf_bsscfg(struct net_device *dev, s8 *iovar_name,
 	void *param, s32 paramlen, void *buf, s32 buflen, s32 bsscfg_idx,
 	struct mutex* buf_sync);
+int wl_ext_link_iovar_getint(struct net_device *dev, u8 link_idx, s8 *iovar, s32 *val);
 chanspec_t wl_ext_chspec_driver_to_host(struct dhd_pub *dhd, chanspec_t chanspec);
 chanspec_t wl_ext_chspec_host_to_driver(struct dhd_pub *dhd, chanspec_t chanspec);
 bool wl_ext_dfs_chan(u32 chanspec);
 bool wl_ext_passive_chan(struct net_device *dev, u32 chanspec);
 void wl_ext_get_default_chan(struct net_device *dev,
 	uint16 *chan_2g, uint16 *chan_5g, uint16 *chan_6g);
-int wl_ext_set_chanspec(struct net_device *dev, struct wl_chan_info *chan_info,
+int wl_ext_set_chanspec(struct net_device *dev, struct wl_ext_chan_info *chan_info,
 	chanspec_t *ret_chspec);
 int wl_ext_get_ioctl_ver(struct net_device *dev, int *ioctl_ver);
 #endif
@@ -206,6 +213,7 @@ int wl_ext_get_best_channel(struct net_device *net,
 	(band == WLC_BAND_2G) ? "2g" : \
 	(band == WLC_BAND_5G) ? "5g" : \
 	(band == WLC_BAND_6G) ? "6g" : \
+	(band == WLC_BAND_ALL) ? "all" : \
 	(band == WLC_BAND_AUTO) ? "auto" : "?g")
 
 #define WLCWIDTH2STR(width) ( \
@@ -213,4 +221,23 @@ int wl_ext_get_best_channel(struct net_device *net,
 	((width) == WL_CHANSPEC_BW_40) ? "40" : \
 	((width) == WL_CHANSPEC_BW_80) ? "80" : \
 	((width) == WL_CHANSPEC_BW_160) ? "160" : "?")
+
+#define MLOLOG "%s%s"
+#ifdef WL_MLO
+#define MLO2STRLOG(cfg, mlo_info) \
+	cfg->mlo.supported ? ", " : "", \
+	cfg->mlo.supported ? mlo_info : ""
+
+#define MLOLPS2STRLOG(lps) ( \
+	(lps == WL_MLO_LINK_PWRST_ACTIVE) ? "Active " : \
+	(lps == WL_MLO_LINK_PWRST_PM) ? "PM     " : \
+	(lps == WL_MLO_LINK_PWRST_DORMANT) ? "Dormant" : "Unknown")
+
+#define MLOLPS_ALIVE(lps)	((lps == WL_MLO_LINK_PWRST_ACTIVE) || \
+	(lps == WL_MLO_LINK_PWRST_PM))
+#else
+#define MLO2STRLOG(cfg, mlo_info) "", ""
+#define MLOLPS2STRLOG(lps) ""
+#define MLOLPS_ALIVE(lps)	(TRUE)
+#endif /* WL_MLO */
 #endif

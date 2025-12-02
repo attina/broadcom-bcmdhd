@@ -5,7 +5,7 @@
  * IEEE Std 802.1X-2001
  * IEEE 802.1X RADIUS Usage Guidelines
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -24,7 +24,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -129,6 +129,7 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 #define EAPOL_WPA_KEY_RSC_LEN		8u
 #define EAPOL_WPA_KEY_ID_LEN		8u
 #define EAPOL_WPA_KEY_DATA_LEN		(EAPOL_WPA_MAX_KEY_SIZE + EAPOL_AKW_BLOCK_LEN)
+#define EAPOL_WPA_MIN_KEY_SIZE		16u
 #define EAPOL_WPA_MAX_KEY_SIZE		32u
 #define EAPOL_WPA_KEY_MAX_MIC_LEN	32u
 #define EAPOL_WPA_ENCR_KEY_MAX_LEN	64u
@@ -136,6 +137,7 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 
 #define EAPOL_WPA_PMK_MAX_LEN           64u
 #define EAPOL_WPA_PMK_SHA384_LEN        48u
+#define EAPOL_WPA_PMK_SHA512_LEN        64u
 #define EAPOL_WPA_PMK_DEFAULT_LEN	32u
 #define EAPOL_WPA_KCK_DEFAULT_LEN	16u
 #define EAPOL_WPA_KCK_SHA384_LEN	24u
@@ -271,6 +273,14 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 #define WPA2_KEY_DATA_SUBTYPE_MLO_BIGTK		18
 #define WPA2_KEY_DATA_SUBTYPE_MLO_LINK_KDE	19
 
+#ifdef WL_RCM
+/* note: RCM comes after WPA2 but SUBTYPE space is same as WPA2 */
+#define RSN_KEY_DATA_SUBTYPE_RCM_DEV_ID		20u
+#define RSN_KEY_DATA_SUBTYPE_RCM_IRM		21u
+#define WPA2_KEY_DATA_SUBTYPE_RCM_DEV_ID RSN_KEY_DATA_SUBTYPE_RCM_DEV_ID
+#define WPA2_KEY_DATA_SUBTYPE_RCM_IRM RSN_KEY_DATA_SUBTYPE_RCM_IRM
+#endif /* WL_RCM */
+
 #define WPA2_GTK_INDEX_MASK			0x03
 #define WPA2_GTK_INDEX_SHIFT			0x00
 #define WPA2_GTK_TRANSMIT			0x04
@@ -334,7 +344,7 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 	uint8	key[EAPOL_WPA_MAX_KEY_SIZE];
 } BWL_POST_PACKED_STRUCT eapol_wpa2_key_mlo_bigtk_encap_t;
 
-#define EAPOL_WPA2_LINK_INFO_LINKID_MASK	(0xFu)
+#define EAPOL_WPA2_LINK_INFO_LINKID_MASK	0xFu
 #define EAPOL_WPA2_LINK_INFO_RSNE_PRESENT	(0x1u << 4u)
 #define EAPOL_WPA2_LINK_INFO_RSNXE_PRESENT	(0x1u << 5u)
 #define EAPOL_WPA2_LINK_KDE_ENCAP_HDR_LEN	7u

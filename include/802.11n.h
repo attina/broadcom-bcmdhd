@@ -6,7 +6,7 @@
  * OBSS - Overlapping BSS
  * EXTCH/EXT_CH - Extension Channel
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -25,7 +25,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -119,7 +119,7 @@ BWL_PRE_PACKED_STRUCT struct dot11_action_ht_mimops {
 
 /* ************* HT definitions. ************* */
 #define MCSSET_LEN	16	/* 16-bits per 8-bit set to give 128-bits bitmap of MCS Index */
-#define MAX_MCS_NUM	(128)	/* max mcs number = 128 */
+#define MAX_MCS_NUM	128	/* max mcs number = 128 */
 #define BASIC_HT_MCS	0xFFu	/* HT MCS supported rates */
 
 BWL_PRE_PACKED_STRUCT struct ht_cap_ie {
