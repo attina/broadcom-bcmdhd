@@ -117,20 +117,6 @@ extern bool  bcmsdh_fatal_error(void *sdh);
 static int dhdsdio_suspend(void *context);
 static int dhdsdio_resume(void *context);
 
-#ifdef CONFIG_ARCH_ASTRA
-static void dhd_bus_sdio_pwr_req_lock_init(struct dhd_bus *bus, osl_t *osh)
-{ return;}
-static void dhd_bus_sdio_pwr_req_lock_deinit(struct dhd_bus *bus, osl_t *osh)
-{ return;}
-static void dhd_bus_sdio_pwr_req(struct dhd_bus *bus)
-{ return;}
-static void dhd_bus_sdio_pwr_req_clear(struct dhd_bus *bus)
-{ return;}
-static void dhd_bus_sdio_pwr_req_nolock(struct dhd_bus *bus)
-{ return;}
-static void dhd_bus_sdio_pwr_req_clear_nolock(struct dhd_bus *bus)
-{ return;}
-#else
 /* Power request function declarations for SDIO */
 static void dhd_bus_sdio_pwr_req_lock_init(struct dhd_bus *bus, osl_t *osh);
 static void dhd_bus_sdio_pwr_req_lock_deinit(struct dhd_bus *bus, osl_t *osh);
@@ -138,7 +124,7 @@ static void dhd_bus_sdio_pwr_req(struct dhd_bus *bus);
 static void dhd_bus_sdio_pwr_req_clear(struct dhd_bus *bus);
 static void dhd_bus_sdio_pwr_req_nolock(struct dhd_bus *bus);
 static void dhd_bus_sdio_pwr_req_clear_nolock(struct dhd_bus *bus);
-#endif /* CONFIG_ARCH_ASTRA */
+
 #ifndef DHDSDIO_MEM_DUMP_FNAME
 #define DHDSDIO_MEM_DUMP_FNAME         "mem_dump"
 #endif
@@ -259,6 +245,10 @@ DHD_SPINWAIT_SLEEP_INIT(sdioh_spinwait_sleep);
 #if defined(__linux__) && defined(MULTIPLE_SUPPLICANT)
 DEFINE_MUTEX(_dhd_sdio_mutex_lock_);
 #endif /* defined(__linux__) && defined(MULTIPLE_SUPPLICANT) */
+
+#if defined(__linux__)
+DEFINE_MUTEX(_dhd_sdio_pwrreq_lock_);
+#endif /* __linux__  */
 
 #ifdef SUPPORT_MULTIPLE_BOARD_REV_FROM_HW
 extern unsigned int system_hw_rev;
@@ -5893,10 +5883,9 @@ dhd_bus_init(dhd_pub_t *dhdp, bool enforce_mutex)
 		goto exit;
 	}
 
-	f2_enab_start_us = osl_systztime_us();
-
 	/* Enable function 2 (frame transfers) */
 	/* New API: change to bcmsdh_fn_set(sdh, SDIO_FUNC_2, TRUE); */
+	f2_enab_start_us = osl_systztime_us();
 	W_SDREG((SDPCM_PROT_VERSION << SMB_DATA_VERSION_SHIFT),
 		&bus->regs->tosbmailboxdata, retries);
 	enable = (SDIO_FUNC_ENABLE_1 | SDIO_FUNC_ENABLE_2);
@@ -5916,9 +5905,9 @@ dhd_bus_init(dhd_pub_t *dhdp, bool enforce_mutex)
 
 #endif /* !BCMSPI */
 
-	if (bus->sih->chip == BCM4384_CHIP_ID) {
-		f2_enab_end_us = osl_systztime_us();
-		f2_enab_dur_us = (f2_enab_end_us - f2_enab_start_us);
+	f2_enab_end_us = osl_systztime_us();
+	f2_enab_dur_us = (f2_enab_end_us - f2_enab_start_us);
+	if (CHIPID(bus->sih->chip) == BCM4384_CHIP_ID) {
 		if (f2_enab_dur_us < CUSTOM_BUS_INIT_DELAY)
 			OSL_DELAY(CUSTOM_BUS_INIT_DELAY - f2_enab_dur_us);
 	}
@@ -11739,7 +11728,6 @@ int dhd_get_idletime(dhd_pub_t *dhd)
 	return dhd->bus->idletime;
 }
 
-#ifndef CONFIG_ARCH_ASTRA
 /* Power request functions for SDIO */
 static void
 dhd_bus_sdio_pwr_req_lock_init(struct dhd_bus *bus, osl_t *osh)
@@ -11782,11 +11770,9 @@ _dhd_bus_sdio_pwr_req_cmn(struct dhd_bus *bus)
 static void
 dhd_bus_sdio_pwr_req(struct dhd_bus *bus)
 {
-	unsigned long flags = 0;
-
-	DHD_BUS_PWR_REQ_LOCK(bus->pwr_req_lock, flags);
+	DHD_BUS_PWR_REQ_LOCK(_dhd_sdio_pwrreq_lock_);
 	_dhd_bus_sdio_pwr_req_cmn(bus);
-	DHD_BUS_PWR_REQ_UNLOCK(bus->pwr_req_lock, flags);
+	DHD_BUS_PWR_REQ_UNLOCK(_dhd_sdio_pwrreq_lock_);
 }
 
 static void
@@ -11821,11 +11807,9 @@ _dhd_bus_sdio_pwr_req_clear_cmn(struct dhd_bus *bus)
 static void
 dhd_bus_sdio_pwr_req_clear(struct dhd_bus *bus)
 {
-	unsigned long flags = 0;
-
-	DHD_BUS_PWR_REQ_LOCK(bus->pwr_req_lock, flags);
+	DHD_BUS_PWR_REQ_LOCK(_dhd_sdio_pwrreq_lock_);
 	_dhd_bus_sdio_pwr_req_clear_cmn(bus);
-	DHD_BUS_PWR_REQ_UNLOCK(bus->pwr_req_lock, flags);
+	DHD_BUS_PWR_REQ_UNLOCK(_dhd_sdio_pwrreq_lock_);
 }
 
 static void
@@ -11833,7 +11817,6 @@ dhd_bus_sdio_pwr_req_clear_nolock(struct dhd_bus *bus)
 {
 	_dhd_bus_sdio_pwr_req_clear_cmn(bus);
 }
-#endif /* CONFIG_ARCH_ASTRA */
 
 #ifdef DHD_WAKE_STATUS
 wake_counts_t*

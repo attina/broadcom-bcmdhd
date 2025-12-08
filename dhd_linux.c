@@ -8128,6 +8128,7 @@ dhd_get_ifp_by_ndev(dhd_pub_t *dhdp, struct net_device *ndev)
 	return NULL;
 }
 
+#ifdef WL_STATIC_IF
 bool
 dhd_is_static_ndev(dhd_pub_t *dhdp, struct net_device *ndev)
 {
@@ -8146,7 +8147,6 @@ dhd_is_static_ndev(dhd_pub_t *dhdp, struct net_device *ndev)
 	return FALSE;
 }
 
-#ifdef WL_STATIC_IF
 /* While registering static I/F, the actual ifidx, bssidx and dngl_name are not known.
  * This function lets to update the dhdinfo->iflist after the firmware interface is initialised.
  */

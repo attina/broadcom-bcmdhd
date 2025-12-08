@@ -507,6 +507,16 @@ void bcmsdh_oob_intr_unregister(bcmsdh_info_t *bcmsdh)
 		disable_irq(bcmsdh_osinfo->oob_irq_num);
 		bcmsdh_osinfo->oob_irq_enabled = FALSE;
 	}
+
+#ifdef HOST_WAKE_IRQ_CPUCORE
+#ifdef BCMDHD_MODULAR
+	irq_set_affinity_hint(bcmsdh_osinfo->oob_irq_num, NULL);
+#else
+	irq_set_affinity(bcmsdh_osinfo->oob_irq_num, NULL);
+#endif /* BCMDHD_MODULAR */
+#endif /* HOST_WAKE_IRQ_CPUCORE */
+	irq_set_affinity_notifier(bcmsdh_osinfo->oob_irq_num, NULL);
+
 	free_irq(bcmsdh_osinfo->oob_irq_num, bcmsdh);
 	bcmsdh_osinfo->oob_irq_registered = FALSE;
 }

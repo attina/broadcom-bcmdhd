@@ -3900,7 +3900,12 @@ wl_cfg80211_post_ifcreate(struct net_device *ndev,
 
 #ifdef WL_STATIC_IF
 	static_ifidx = wl_cfg80211_static_if_name(cfg, name);
-	if (static_ifidx >= 0 || IS_NMI_IFACE(name)) {
+#ifdef WL_NAN
+	if (static_ifidx >= 0 || IS_NMI_IFACE(name))
+#else
+	if (static_ifidx >= 0)
+#endif
+	{
 		new_ndev = wl_cfg80211_post_static_ifcreate(cfg, event, addr, iface_type,
 			static_ifidx);
 		if (!new_ndev) {
@@ -3992,11 +3997,14 @@ fail:
 		cfg->static_ndev_state[static_ifidx] = NDEV_STATE_FW_IF_FAILED;
 		wl_cfg80211_update_iflist_info(cfg, new_ndev, event->ifidx, addr,
 			event->bssidx, event->name, NDEV_STATE_FW_IF_FAILED);
-	} else if (IS_NMI_IFACE(name)) {
+	}
+#ifdef WL_NAN
+	else if (IS_NMI_IFACE(name)) {
 		cfg->nmi_ndev_state = NDEV_STATE_FW_IF_FAILED;
 		wl_cfg80211_update_iflist_info(cfg, new_ndev, event->ifidx, addr,
 			event->bssidx, event->name, NDEV_STATE_FW_IF_FAILED);
 	}
+#endif /* WL_NAN */
 #endif /* WL_STATIC_IF */
 	if (new_ndev) {
 		/* wdev would be freed from netdev destructor call back */
@@ -4146,7 +4154,12 @@ _wl_cfg80211_post_ifdel(struct net_device *ndev, bool rtnl_lock_reqd, s32 ifidx)
 	}
 
 #ifdef WL_STATIC_IF
-	if (wl_cfg80211_static_if(cfg, ndev) || IS_NMI_IFACE(ndev->name)) {
+#ifdef WL_NAN
+	if (wl_cfg80211_static_if(cfg, ndev) || IS_NMI_IFACE(ndev->name))
+#else
+	if (wl_cfg80211_static_if(cfg, ndev))
+#endif /* WL_NAN */
+	{
 		ret = wl_cfg80211_post_static_ifdel(cfg, ndev, ifidx, netinfo->bssidx);
 	} else
 #endif /* WL_STATIC_IF */
@@ -26255,6 +26268,7 @@ wl_notify_start_auth(struct bcm_cfg80211 *cfg,
 		wl_update_bss_info(cfg, ndev, false, evt_data->bssid.octet);
 #endif /* WL_MLO */
 
+	memset(&ext_auth_param, 0, sizeof(struct cfg80211_external_auth_params));
 	ext_auth_param.ssid.ssid_len = MIN(evt_data->ssid.SSID_len, DOT11_MAX_SSID_LEN);
 	if (ext_auth_param.ssid.ssid_len) {
 		(void)memcpy_s(&ext_auth_param.ssid.ssid, ext_auth_param.ssid.ssid_len,
@@ -26269,7 +26283,10 @@ wl_notify_start_auth(struct bcm_cfg80211 *cfg,
 	 * the event since MLD is unknown to host yet.
 	 */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(WL_EXT_AUTH_BKPORT)
-	(void)memcpy_s(&ext_auth_param.mld_addr, ETHER_ADDR_LEN, e->addr.octet, ETHER_ADDR_LEN);
+#ifdef WL_MLO
+	if (cfg->mlo.supported)
+		(void)memcpy_s(&ext_auth_param.mld_addr, ETHER_ADDR_LEN, e->addr.octet, ETHER_ADDR_LEN);
+#endif /* WL_MLO */
 	(void)memcpy_s(&ext_auth_param.bssid,
 			ETHER_ADDR_LEN, evt_data->bssid.octet, ETHER_ADDR_LEN);
 #else

@@ -4162,8 +4162,13 @@ extern void dhd_os_general_spin_unlock(dhd_pub_t *pub, unsigned long flags);
 #define DHD_BAR2_SWITCH_LOCK(lock, flags)   ((flags) = osl_spin_lock(lock))
 #define DHD_BAR2_SWITCH_UNLOCK(lock, flags) osl_spin_unlock((lock), (flags))
 
+#if defined(BCMSDIO) && defined(__linux__)
+#define DHD_BUS_PWR_REQ_LOCK(lock)	mutex_lock(&lock)
+#define DHD_BUS_PWR_REQ_UNLOCK(lock)	mutex_unlock(&lock);
+#else
 #define DHD_BUS_PWR_REQ_LOCK(lock, flags)	((flags) = osl_spin_lock(lock))
 #define DHD_BUS_PWR_REQ_UNLOCK(lock, flags)	osl_spin_unlock((lock), (flags))
+#endif /* BCMSDIO && __linux__ */
 
 #ifdef PCIE_INB_DW
 #define DHD_BUS_DONGLE_DS_LOCK(lock, flags)	((flags) = osl_spin_lock(lock))
