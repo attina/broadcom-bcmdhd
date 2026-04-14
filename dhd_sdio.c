@@ -1,7 +1,7 @@
 /*
  * DHD Bus Module for SDIO
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -7054,6 +7054,15 @@ dhdsdio_readframes(dhd_bus_t *bus, uint maxframes, bool *finished)
 			/* Handle Flow Control */
 			fcbits = SDPCM_FCMASK_VALUE(&bus->rxhdr[SDPCM_FRAMETAG_LEN]);
 
+#ifdef PROP_TXSTATUS
+			/* when proptx is active, flowcontrol is implemented through
+			 * MAC CLOSE / OPEN, and this fc shall be ignored
+			 */
+			if (bus->dhd->wlfc_state) {
+				fcbits = 0;
+			}
+#endif /* PROP_TXSTATUS */
+
 			delta = 0;
 			if (~bus->flowcontrol & fcbits) {
 				bus->fc_xoff++;
@@ -7226,7 +7235,14 @@ dhdsdio_readframes(dhd_bus_t *bus, uint maxframes, bool *finished)
 
 		/* Handle Flow Control */
 		fcbits = SDPCM_FCMASK_VALUE(&bus->rxhdr[SDPCM_FRAMETAG_LEN]);
-
+#ifdef PROP_TXSTATUS
+		/* when proptx is active, flowcontrol is implemented through
+		 * MAC CLOSE / OPEN, and this fc shall be ignored
+		 */
+		if (bus->dhd->wlfc_state) {
+			fcbits = 0;
+		}
+#endif /* PROP_TXSTATUS */
 		delta = 0;
 		if (~bus->flowcontrol & fcbits) {
 			bus->fc_xoff++;
@@ -7509,6 +7525,12 @@ dhdsdio_hostmail(dhd_bus_t *bus, uint32 *hmbd)
 	 * method isn't used any more.  Leave this here for possibly remaining backward
 	 * compatible with older dongles
 	 */
+#ifdef PROP_TXSTATUS
+	/* when proptx is active, flowcontrol is implemented through
+	 * MAC CLOSE / OPEN, and this fc shall be ignored
+	 */
+	if (!bus->dhd->wlfc_state)
+#endif /* PROP_TXSTATUS */
 	if (hmb_data & HMB_DATA_FC) {
 		fcbits = (hmb_data & HMB_DATA_FCDATA_MASK) >> HMB_DATA_FCDATA_SHIFT;
 
@@ -8065,6 +8087,44 @@ dhdsdio_isr(void *arg)
 #endif /* defined(SDIO_ISR_THREAD) */
 
 }
+
+#ifdef OOB_GPIO_TSF_INTR
+#include "linux/time.h"
+void
+dhdsdio_tsf_isr(void *arg)
+{
+	dhd_bus_t *bus = (dhd_bus_t*)arg;
+	bcmsdh_info_t *sdh;
+	UNUSED_PARAMETER(sdh);
+
+	if (bus->dhd->tsf_intr_state == TSF_INTR_PREPARE) {
+		bus->dhd->tsf_host_ns = ktime_get_ns();
+		bus->dhd->tsf_intr_state = TSF_INTR_UPDATED;
+	}
+	if (!bus) {
+		DHD_ERROR(("%s: bus is null pointer, exit\n", __FUNCTION__));
+		return;
+	}
+	sdh = bus->sdh;
+
+	if (bus->dhd->busstate == DHD_BUS_DOWN) {
+		DHD_ERROR(("%s: bus is down. we have nothing to do\n", __FUNCTION__));
+		return;
+	}
+
+	DHD_INTR(("%s: Enter\n", __FUNCTION__));
+}
+
+int dhd_bus_oob_tsf_intr_register(dhd_pub_t *dhdp)
+{
+	return bcmsdh_oob_tsf_intr_register(dhdp->bus->sdh, dhdsdio_tsf_isr, dhdp->bus);
+}
+
+void dhd_bus_oob_tsf_intr_unregister(dhd_pub_t *dhdp)
+{
+	bcmsdh_oob_tsf_intr_unregister(dhdp->bus->sdh);
+}
+#endif /* OOB_GPIO_TSF_INTR */
 
 #ifdef PKT_STATICS
 void
@@ -10831,6 +10891,9 @@ dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag)
 			bcmsdh_oob_intr_set(bus->sdh, FALSE);
 			bcmsdh_oob_intr_unregister(bus->sdh);
 #endif /* defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID) */
+#ifdef OOB_GPIO_TSF_INTR
+			bcmsdh_oob_tsf_intr_unregister(bus->sdh);
+#endif /* OOB_GPIO_TSF_INTR */
 
 			/* Clean tx/rx buffer pointers, detach from the dongle */
 			dhdsdio_release_dongle(bus, bus->dhd->osh, TRUE, TRUE);
@@ -10885,6 +10948,10 @@ dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag)
 					/* Re-init bus, enable F2 transfer */
 					bcmerror = dhd_bus_init((dhd_pub_t *) bus->dhd, FALSE);
 					if (bcmerror == BCME_OK) {
+#ifdef OOB_GPIO_TSF_INTR
+						bcmsdh_oob_tsf_intr_register(bus->sdh,
+							dhdsdio_tsf_isr, bus);
+#endif /* OOB_GPIO_TSF_INTR */
 						if (bus->intr) {
 #if defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID)
 							dhd_enable_oob_intr(bus, TRUE);

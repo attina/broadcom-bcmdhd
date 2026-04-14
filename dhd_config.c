@@ -240,84 +240,123 @@ const module_name_map_t module_name_map[] = {
 };
 #endif
 
+typedef struct str_val_map_t {
+	uint val;
+	char *name;
+} str_val_map_t;
+
+const str_val_map_t insuspend_name_map[] = {
+	{NO_EVENT_IN_SUSPEND,		"NO_EVENT_IN_SUSPEND"},
+	{NO_TXDATA_IN_SUSPEND,		"NO_TXDATA_IN_SUSPEND"},
+	{NO_TXCTL_IN_SUSPEND,		"NO_TXCTL_IN_SUSPEND"},
+	{AP_DOWN_IN_SUSPEND,		"AP_DOWN_IN_SUSPEND"},
+	{ROAM_OFFLOAD_IN_SUSPEND,	"ROAM_OFFLOAD_IN_SUSPEND"},
+	{AP_FILTER_IN_SUSPEND,		"AP_FILTER_IN_SUSPEND"},
+	{WOWL_IN_SUSPEND,			"WOWL_IN_SUSPEND"},
+	{ALL_IN_SUSPEND,			"ALL_IN_SUSPEND"},
+};
+
+const str_val_map_t in4way_name_map[] = {
+	{STA_NO_SCAN_IN4WAY,		"STA_NO_SCAN_IN4WAY"},
+	{STA_NO_BTC_IN4WAY,			"STA_NO_BTC_IN4WAY"},
+	{STA_WAIT_DISCONNECTED,		"STA_WAIT_DISCONNECTED"},
+	{STA_FAKE_SCAN_IN_CONNECT,	"STA_FAKE_SCAN_IN_CONNECT"},
+	{STA_RECONNECT_RETRY,		"STA_RECONNECT_RETRY"},
+	{AP_WAIT_STA_RECONNECT,		"AP_WAIT_STA_RECONNECT"},
+};
+
+const str_val_map_t war_name_map[] = {
+	{SET_CHAN_INCONN,		"SET_CONN_CHAN_WAR"},
+	{FW_REINIT_INCSA,		"FW_REINIT_INCSA_WAR"},
+	{FW_REINIT_EMPTY_SCAN,	"FW_REINIT_EMPTY_SCAN_WAR"},
+	{FW_REINIT_RXF0OVFL,	"FW_REINIT_RXF0OVFL_WAR"},
+	{P2P_AP_MAC_CONFLICT,	"P2P_AP_MAC_CONFLICT_WAR"},
+	{RESEND_EAPOL_PKT,		"RESEND_EAPOL_PKT_WAR"},
+	{ARP_DETECTION_WAR,		"ARP_DETECTION_WAR"},
+	{STA_REASSOC_WAR,		"STA_REASSOC_WAR"},
+};
+
+#ifdef SCAN_SUPPRESS
+const str_val_map_t scan_intput_name_map[] = {
+	{NO_SCAN_INTPUT,		"NO_SCAN_INTPUT"},
+	{SCAN_CURCHAN_INTPUT,	"SCAN_CURCHAN_INTPUT"},
+	{SCAN_LIGHT_INTPUT,		"SCAN_LIGHT_INTPUT"},
+};
+#endif /* SCAN_SUPPRESS */
+
+static uint
+dhd_conf_str2val(uint *output_val, char *data, char *op,
+	const str_val_map_t *row, int cnt)
+{
+	char *pch, *pick_tmp;
+	uint val = 0;
+	int i;
+
+	pick_tmp = data;
+	pch = bcmstrtok(&pick_tmp, " ,|", 0);
+	while (pch != NULL) {
+		for (i = 0; i < cnt; i++) {
+			if (!strcmp(pch, row[i].name)) {
+				val |= row[i].val;
+				break;
+			}
+		}
+		pch = bcmstrtok(&pick_tmp, " ,|", 0);
+	}
+	if (val == 0)
+		val = (int)simple_strtol(data, NULL, 0);
+
+	if (!strcmp(op, "set"))
+		*output_val = val;
+	else if (!strcmp(op, "or"))
+		*output_val |= val;
+
+	for (i = 0; i < cnt; i++) {
+		if ((*output_val & row[i].val) && (row[i].val != -1))
+			CONFIG_INFO("[0x%02x] %s\n", row[i].val, row[i].name);
+	}
+
+	return val;
+}
+
 #ifdef DHD_TPUT_PATCH
 extern int dhd_change_mtu(dhd_pub_t *dhd, int new_mtu, int ifidx);
 #endif
-
-bool
-dhd_conf_csa_chip(dhd_pub_t *dhd)
-{
-	uint chip = dhd->conf->chip;
-	bool csa = TRUE;
-
-	if (dhd->conf->csa < 0) {
-		if (chip == BCM43430_CHIP_ID ||
-				chip == BCM4359_CHIP_ID) {
-			csa = FALSE;
-		}
-	} else {
-		csa = dhd->conf->csa;
-	}
-
-	CONFIG_INFO("csa=%d\n", csa);
-	return csa;
-}
-
-bool
-dhd_conf_vsdb_chip(dhd_pub_t *dhd)
-{
-	bool vsdb = FALSE;
-
-	if (dhd_conf_mlo_chip(dhd))
-		vsdb = TRUE;
-
-	CONFIG_INFO("vsdb=%d\n", vsdb);
-	return vsdb;
-}
 
 bool
 dhd_conf_mlo_chip(dhd_pub_t *dhd)
 {
 	uint chip = dhd->conf->chip;
 
-	if (chip == BCM43430_CHIP_ID || chip == BCM4345_CHIP_ID ||
-			chip == BCM4359_CHIP_ID ||
-			chip == BCM43012_CHIP_ID ||
-			chip == BCM43752_CHIP_ID || chip == BCM4375_CHIP_ID ||
-			chip == SYNA43711_CHIP_ID || chip == BCM43756_CHIP_ID ||
-			chip == BCM4381_CHIP_ID || chip == BCM4382_CHIP_ID||
-			chip == BCM4383_CHIP_ID) {
-		return false;
+	if (chip == BCM4384_CHIP_ID) {
+		return TRUE;
 	}
 
-	return true;
+	return FALSE;
 }
 
-static void
-dhd_conf_idsup_idauth_chip(dhd_pub_t *dhd)
+bool
+dhd_conf_csa_chip(dhd_pub_t *dhd)
 {
-	/* For Wi-Fi 7 later chip, FW idsup and idauth have to be used for MLO connection, all the SAE and
-	  * WPA handshaking are offloaded in FW side.
-	  * For other old chips, keep using host wpa_supplicant and hostapd for the handshaking.
-	  */
-	if (dhd_conf_mlo_chip(dhd)) {
-#ifdef BCMSUP_4WAY_HANDSHAKE
-		dhd_use_idsup = TRUE;
-#endif /* BCMSUP_4WAY_HANDSHAKE */
-#ifdef WL_IDAUTH
-		idauth_enable = TRUE;
-#endif /* WL_IDAUTH */
-	} else {
-#ifdef WL_MLO
-		mlo_sta_disable = TRUE;
-#endif /* WL_MLO */
-#ifdef BCMSUP_4WAY_HANDSHAKE
-		dhd_use_idsup = FALSE;
-#endif /* BCMSUP_4WAY_HANDSHAKE */
-#ifdef WL_IDAUTH
-		idauth_enable = FALSE;
-#endif /* WL_IDAUTH */
-	}
+	bool csa = TRUE;
+
+	if (dhd->conf->csa >= 0)
+		csa = dhd->conf->csa;
+
+	CONFIG_INFO("csa=%d\n", csa);
+	return csa;
+}
+
+bool
+dhd_conf_mcc_chip(dhd_pub_t *dhd)
+{
+	bool mcc = FALSE;
+
+	if (dhd->conf->mcc >= 0)
+		mcc = dhd->conf->mcc;
+
+	CONFIG_INFO("mcc=%d\n", mcc);
+	return mcc;
 }
 
 #ifdef WL_CFG80211
@@ -1192,6 +1231,7 @@ dhd_conf_dump_tput_patch(dhd_pub_t *dhd)
 	CONFIG_TRACE("tcpack_sup_ratio=%d\n", conf->tcpack_sup_ratio);
 	CONFIG_TRACE("tcpack_sup_delay=%d\n", conf->tcpack_sup_delay);
 #endif
+	CONFIG_TRACE("tcp_pacing_shift=%d\n", conf->tcp_pacing_shift);
 
 #ifdef BCMSDIO
 	CONFIG_TRACE("dhd_dpc_prio=%d\n", conf->dhd_dpc_prio);
@@ -1659,13 +1699,13 @@ dhd_conf_rsdb_mode(dhd_pub_t *dhd, char *cmd, char *buf)
 	return 0;
 }
 
-int
+bool
 dhd_conf_rsdb_chip(dhd_pub_t *dhd)
 {
 	uint chip = dhd->conf->chip;
 	char iovar_buf[WLC_IOCTL_SMLEN];
 	wl_config_t *rsdb_p;
-	int ret = 0, rsdb = 0;
+	int ret = 0, rsdb = FALSE;
 
 	if (chip == BCM4359_CHIP_ID || chip == BCM4375_CHIP_ID ||
 			chip == BCM4382_CHIP_ID) {
@@ -1673,10 +1713,10 @@ dhd_conf_rsdb_chip(dhd_pub_t *dhd)
 			iovar_buf, WLC_IOCTL_SMLEN);
 		if (!ret) {
 			if (dhd->conf->fw_type == FW_TYPE_MESH) {
-				rsdb = 1;
+				rsdb = TRUE;
 			} else {
 				rsdb_p = (wl_config_t *) iovar_buf;
-				rsdb = rsdb_p->status;
+				rsdb = rsdb_p->status ? TRUE : FALSE;
 				CONFIG_INFO("config=%d, status=%d\n",
 					rsdb_p->config, rsdb_p->status);
 			}
@@ -1686,7 +1726,7 @@ dhd_conf_rsdb_chip(dhd_pub_t *dhd)
 		ret = dhd_conf_iovar_buf(dhd, 0, WLC_GET_VAR, "rsdb_mode",
 			iovar_buf, WLC_IOCTL_SMLEN);
 		if (!ret) {
-			rsdb = 1;
+			rsdb = TRUE;
 		}
 	}
 
@@ -1879,6 +1919,17 @@ static const sub_cmd_t he_cmd_list[] = {
 	{"omi_dlmu_rr_mpf_map", WL_HE_CMD_OMI_DLMU_RSD_RCM_MPF_MAP, IOVT_UINT32, wl_cmd_uint},
 	{"ulmu_disable_policy", WL_HE_CMD_ULMU_DISABLE_POLICY, IOVT_UINT8, wl_cmd_uint},
 	{"sr_prohibit", WL_HE_CMD_SR_PROHIBIT, IOVT_UINT8, wl_cmd_uint},
+};
+
+static const sub_cmd_t eht_cmd_list[] = {
+	{"enab", WL_EHT_CMD_ENAB, IOVT_UINT8, wl_cmd_uint},
+	{"dbg", WL_EHT_CMD_DBG, IOVT_UINT32, wl_cmd_uint},
+	{"features", WL_EHT_CMD_FEATURES, IOVT_UINT16, wl_cmd_uint},
+	{"sigmcs", WL_EHT_CMD_SIGMCS, IOVT_UINT8, wl_cmd_uint},
+	{"numltf", WL_EHT_CMD_NUMLTF, IOVT_UINT8, wl_cmd_uint},
+	{"nonht_punc_patt", WL_EHT_CMD_NONHT_PUNC_PATT, IOVT_UINT16, wl_cmd_uint},
+	{"punc_pat", WL_EHT_CMD_PUNC_PAT, IOVT_UINT16, wl_cmd_uint},
+	{"testbed_mode", WL_EHT_CMD_TESTBED_MODE, IOVT_UINT32, wl_cmd_uint},
 };
 
 #ifdef WL_MLO
@@ -2186,6 +2237,8 @@ dhd_conf_xtlv_cmd(dhd_pub_t *dhd, char *cmd, char *buf)
 
 	if (!strcmp(cmd, "he"))
 		sub = wl_find_sub_cmd(sub_cmd_str, he_cmd_list, ARRAY_SIZE(he_cmd_list));
+	else if (!strcmp(cmd, "eht"))
+		sub = wl_find_sub_cmd(sub_cmd_str, eht_cmd_list, ARRAY_SIZE(eht_cmd_list));
 #ifdef WL_MLO
 	else if (!strcmp(cmd, "mlo"))
 		sub = wl_find_sub_cmd(sub_cmd_str, mlo_cmd_list, ARRAY_SIZE(mlo_cmd_list));
@@ -3115,6 +3168,20 @@ dhd_conf_wbtext(dhd_pub_t *dhd, int ifidx)
 			dhd->wbtext_policy, 0, FALSE);
 		CONFIG_MSG("conf_wbtext=%d fw_wbtext=%d, wnm_bsstrans_resp(wbtext_policy)=%d\n",
 			conf->wbtext, conf->fw_wbtext, dhd->wbtext_policy);
+	}
+}
+
+void
+dhd_conf_set_blacklist_bssid(dhd_pub_t *dhd, int ifidx)
+{
+	struct net_device *net;
+	uint32 mem_needed;
+
+	if (dhd->conf->mac_list && dhd->conf->mac_list->count) {
+		net = dhd_idx2net(dhd, ifidx);
+		mem_needed = (uint32) (OFFSETOF(maclist_t, ea) +
+			sizeof(struct ether_addr) * (dhd->conf->mac_list->count) + 1);
+		dhd_dev_set_blacklist_bssid(net, dhd->conf->mac_list , mem_needed, false);
 	}
 }
 
@@ -4478,48 +4545,48 @@ dhd_conf_read_log_level(dhd_pub_t *dhd, char *full_param, uint len_param)
 
 	if (!strncmp("dhd_msg_level=", full_param, len_param)) {
 		dhd_msg_level = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("dhd_msg_level = 0x%X\n", dhd_msg_level);
+		CONFIG_MSG("dhd_msg_level=0x%x\n", dhd_msg_level);
 	}
 	else if (!strncmp("dump_msg_level=", full_param, len_param)) {
 		dump_msg_level = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("dump_msg_level = 0x%X\n", dump_msg_level);
+		CONFIG_MSG("dump_msg_level=0x%x\n", dump_msg_level);
 	}
 #ifdef BCMSDIO
 	else if (!strncmp("sd_msglevel=", full_param, len_param)) {
 		sd_msglevel = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("sd_msglevel = 0x%X\n", sd_msglevel);
+		CONFIG_MSG("sd_msglevel=0x%x\n", sd_msglevel);
 	}
 #endif
 #ifdef BCMDBUS
 	else if (!strncmp("dbus_msglevel=", full_param, len_param)) {
 		dbus_msglevel = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("dbus_msglevel = 0x%X\n", dbus_msglevel);
+		CONFIG_MSG("dbus_msglevel=0x%x\n", dbus_msglevel);
 	}
 #endif
 	else if (!strncmp("android_msg_level=", full_param, len_param)) {
 		android_msg_level = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("android_msg_level = 0x%X\n", android_msg_level);
+		CONFIG_MSG("android_msg_level=0x%x\n", android_msg_level);
 	}
 	else if (!strncmp("config_msg_level=", full_param, len_param)) {
 		config_msg_level = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("config_msg_level = 0x%X\n", config_msg_level);
+		CONFIG_MSG("config_msg_level=0x%x\n", config_msg_level);
 	}
 #ifdef WL_CFG80211
 	else if (!strncmp("wl_dbg_level=", full_param, len_param)) {
 		wl_dbg_level = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("wl_dbg_level = 0x%X\n", wl_dbg_level);
+		CONFIG_MSG("wl_dbg_level=0x%x\n", wl_dbg_level);
 	}
 #endif
 #if defined(WL_WIRELESS_EXT)
 	else if (!strncmp("iw_msg_level=", full_param, len_param)) {
 		iw_msg_level = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("iw_msg_level = 0x%X\n", iw_msg_level);
+		CONFIG_MSG("iw_msg_level=0x%x\n", iw_msg_level);
 	}
 #endif
 #if defined(DHD_DEBUG)
 	else if (!strncmp("dhd_console_ms=", full_param, len_param)) {
 		dhd->dhd_console_ms = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("dhd_console_ms = %d\n", dhd->dhd_console_ms);
+		CONFIG_MSG("dhd_console_ms=%d\n", dhd->dhd_console_ms);
 	}
 #endif
 	else
@@ -4571,7 +4638,7 @@ dhd_conf_read_wme_ac_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 
 	if (!strncmp("force_wme_ac=", full_param, len_param)) {
 		conf->force_wme_ac = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("force_wme_ac = %d\n", conf->force_wme_ac);
+		CONFIG_MSG("force_wme_ac=%d\n", conf->force_wme_ac);
 	}
 	else if (!strncmp("wme_ac_sta_be=", full_param, len_param)) {
 		dhd_conf_read_wme_ac_value(&conf->wme_sta, data, AC_BE);
@@ -4785,10 +4852,10 @@ dhd_conf_read_roam_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->roam_off = 0;
 		else
 			conf->roam_off = 1;
-		CONFIG_MSG("roam_off = %d\n", conf->roam_off);
+		CONFIG_MSG("roam_off=%d\n", conf->roam_off);
 		if (conf->roam_off == 0) {
 			conf->roam_off_suspend = 0;
-			CONFIG_MSG("roam_off_suspend = %d\n", conf->roam_off_suspend);
+			CONFIG_MSG("roam_off_suspend=%d\n", conf->roam_off_suspend);
 		}
 	}
 	else if (!strncmp("roam_off_suspend=", full_param, len_param)) {
@@ -4796,42 +4863,42 @@ dhd_conf_read_roam_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->roam_off_suspend = 0;
 		else
 			conf->roam_off_suspend = 1;
-		CONFIG_MSG("roam_off_suspend = %d\n", conf->roam_off_suspend);
+		CONFIG_MSG("roam_off_suspend=%d\n", conf->roam_off_suspend);
 	}
 	else if (!strncmp("roam_trigger=", full_param, len_param)) {
 		conf->roam_trigger[0] = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("roam_trigger = %d\n", conf->roam_trigger[0]);
+		CONFIG_MSG("roam_trigger=%d\n", conf->roam_trigger[0]);
 	}
 	else if (!strncmp("roam_scan_period=", full_param, len_param)) {
 		conf->roam_scan_period = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("roam_scan_period = %d\n", conf->roam_scan_period);
+		CONFIG_MSG("roam_scan_period=%d\n", conf->roam_scan_period);
 	}
 	else if (!strncmp("roam_delta=", full_param, len_param)) {
 		conf->roam_delta[0] = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("roam_delta = %d\n", conf->roam_delta[0]);
+		CONFIG_MSG("roam_delta=%d\n", conf->roam_delta[0]);
 	}
 	else if (!strncmp("fullroamperiod=", full_param, len_param)) {
 		conf->fullroamperiod = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("fullroamperiod = %d\n", conf->fullroamperiod);
+		CONFIG_MSG("fullroamperiod=%d\n", conf->fullroamperiod);
 	}
 	else if (!strncmp("wbtext=", full_param, len_param)) {
 		if (!strncmp(data, "0", 1))
 			conf->wbtext = FALSE;
 		else
 			conf->wbtext = TRUE;
-		CONFIG_MSG("wbtext = %d\n", conf->wbtext);
+		CONFIG_MSG("wbtext=%d\n", conf->wbtext);
 	}
 	else if (!strncmp("wl_reassoc_support=", full_param, len_param)) {
 		if (!strncmp(data, "0", 1))
 			wl_reassoc_support = FALSE;
 		else
 			wl_reassoc_support = TRUE;
-		CONFIG_MSG("wl_reassoc_support = %d\n", wl_reassoc_support);
+		CONFIG_MSG("wl_reassoc_support=%d\n", wl_reassoc_support);
 	}
 #ifdef WL_SCHED_SCAN
 	else if (!strncmp("max_sched_scan_reqs=", full_param, len_param)) {
 		conf->max_sched_scan_reqs = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("max_sched_scan_reqs = %d\n", conf->max_sched_scan_reqs);
+		CONFIG_MSG("max_sched_scan_reqs=%d\n", conf->max_sched_scan_reqs);
 	}
 #endif /* WL_SCHED_SCAN */
 	else
@@ -4864,18 +4931,18 @@ dhd_conf_read_country(dhd_pub_t *dhd, char *full_param, uint len_param)
 		memset(&conf->cspec, 0, sizeof(wl_country_t));
 		memcpy(conf->cspec.country_abbrev, data, len_data);
 		memcpy(conf->cspec.ccode, data, len_data);
-		CONFIG_MSG("ccode = %s\n", conf->cspec.ccode);
+		CONFIG_MSG("ccode=%s\n", conf->cspec.ccode);
 	}
 	else if (!strncmp("regrev=", full_param, len_param)) {
 		conf->cspec.rev = (int32)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("regrev = %d\n", conf->cspec.rev);
+		CONFIG_MSG("regrev=%d\n", conf->cspec.rev);
 	}
 	else if (!strncmp("ccode_all=", full_param, len_param)) {
 		len_data = min((uint)WLC_CNTRY_BUF_SZ, len_data);
 		memset(&conf->ccode_all.cspec, 0, sizeof(wl_country_t));
 		memcpy(conf->ccode_all.cspec.country_abbrev, data, len_data);
 		memcpy(conf->ccode_all.cspec.ccode, data, len_data);
-		CONFIG_MSG("ccode_all = %s\n", conf->ccode_all.cspec.ccode);
+		CONFIG_MSG("ccode_all=%s\n", conf->ccode_all.cspec.ccode);
 	}
 	else if (!strncmp("ccode_all_list=", full_param, len_param)) {
 		if (conf->ccode_all_list) {
@@ -4887,7 +4954,7 @@ dhd_conf_read_country(dhd_pub_t *dhd, char *full_param, uint len_param)
 			return TRUE;
 		}
 		memcpy(conf->ccode_all_list, data, len_data);
-		CONFIG_MSG("ccode_all_list size = %d\n", len_data);
+		CONFIG_MSG("ccode_all_list size=%d\n", len_data);
 	}
 	else if (!strncmp("country_list=", full_param, len_param)) {
 		dhd_conf_free_country_list(conf);
@@ -5038,7 +5105,7 @@ dhd_conf_read_pkt_filter(dhd_pub_t *dhd, char *full_param, uint len_param)
 			dhd_master_mode = FALSE;
 		else
 			dhd_master_mode = TRUE;
-		CONFIG_MSG("dhd_master_mode = %d\n", dhd_master_mode);
+		CONFIG_MSG("dhd_master_mode=%d\n", dhd_master_mode);
 	}
 	else if (!strncmp("pkt_filter_add=", full_param, len_param)) {
 		pick_tmp = data;
@@ -5046,7 +5113,7 @@ dhd_conf_read_pkt_filter(dhd_pub_t *dhd, char *full_param, uint len_param)
 		i=0;
 		while (pch != NULL && i<DHD_CONF_FILTER_MAX) {
 			strcpy(&conf->pkt_filter_add.filter[i][0], pch);
-			CONFIG_MSG("pkt_filter_add[%d][] = %s\n",
+			CONFIG_MSG("pkt_filter_add[%d][]=%s\n",
 				i, &conf->pkt_filter_add.filter[i][0]);
 			pch = bcmstrtok(&pick_tmp, ",.-", 0);
 			i++;
@@ -5064,7 +5131,7 @@ dhd_conf_read_pkt_filter(dhd_pub_t *dhd, char *full_param, uint len_param)
 			i++;
 		}
 		conf->pkt_filter_del.count = i;
-		CONFIG_MSG("pkt_filter_del id = ");
+		CONFIG_MSG("pkt_filter_del id=");
 		for (i=0; i<conf->pkt_filter_del.count; i++)
 			printk(KERN_CONT "%d ", conf->pkt_filter_del.id[i]);
 		printk(KERN_CONT "\n");
@@ -5081,7 +5148,7 @@ dhd_conf_read_pkt_filter(dhd_pub_t *dhd, char *full_param, uint len_param)
 			memset(conf->magic_pkt_filter_add, 0, MAGIC_PKT_FILTER_LEN);
 			strcpy(conf->magic_pkt_filter_add, data);
 			conf->magic_pkt_hdr_len = strlen(conf->magic_pkt_filter_add);
-			CONFIG_MSG("magic_pkt_filter_add = %s\n", conf->magic_pkt_filter_add);
+			CONFIG_MSG("magic_pkt_filter_add=%s\n", conf->magic_pkt_filter_add);
 		}
 	}
 	else
@@ -5139,11 +5206,11 @@ dhd_conf_read_dhcp_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 
 	if (!strncmp("dhcpc_enable=", full_param, len_param)) {
 		conf->dhcpc_enable = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhcpc_enable = %d\n", conf->dhcpc_enable);
+		CONFIG_MSG("dhcpc_enable=%d\n", conf->dhcpc_enable);
 	}
 	else if (!strncmp("dhcpd_enable=", full_param, len_param)) {
 		conf->dhcpd_enable = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhcpd_enable = %d\n", conf->dhcpd_enable);
+		CONFIG_MSG("dhcpd_enable=%d\n", conf->dhcpd_enable);
 	}
 	else if (!strncmp("dhcpd_ip_addr=", full_param, len_param)) {
 		if (!bcm_atoipv4(data, &ipa_set)) {
@@ -5151,7 +5218,7 @@ dhd_conf_read_dhcp_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			return false;
 		}
 		memcpy(&conf->dhcpd_ip_addr, &ipa_set, sizeof(struct ipv4_addr));
-		CONFIG_MSG("dhcpd_ip_addr = %s\n", data);
+		CONFIG_MSG("dhcpd_ip_addr=%s\n", data);
 	}
 	else if (!strncmp("dhcpd_ip_mask=", full_param, len_param)) {
 		if (!bcm_atoipv4(data, &ipa_set)) {
@@ -5159,7 +5226,7 @@ dhd_conf_read_dhcp_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			return false;
 		}
 		memcpy(&conf->dhcpd_ip_mask, &ipa_set, sizeof(struct ipv4_addr));
-		CONFIG_MSG("dhcpd_ip_mask = %s\n", data);
+		CONFIG_MSG("dhcpd_ip_mask=%s\n", data);
 	}
 	else if (!strncmp("dhcpd_ip_start=", full_param, len_param)) {
 		if (!bcm_atoipv4(data, &ipa_set)) {
@@ -5167,7 +5234,7 @@ dhd_conf_read_dhcp_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			return false;
 		}
 		memcpy(&conf->dhcpd_ip_start, &ipa_set, sizeof(struct ipv4_addr));
-		CONFIG_MSG("dhcpd_ip_start = %s\n", data);
+		CONFIG_MSG("dhcpd_ip_start=%s\n", data);
 	}
 	else if (!strncmp("dhcpd_ip_end=", full_param, len_param)) {
 		if (!bcm_atoipv4(data, &ipa_set)) {
@@ -5175,7 +5242,7 @@ dhd_conf_read_dhcp_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			return false;
 		}
 		memcpy(&conf->dhcpd_ip_end, &ipa_set, sizeof(struct ipv4_addr));
-		CONFIG_MSG("dhcpd_ip_end = %s\n", data);
+		CONFIG_MSG("dhcpd_ip_end=%s\n", data);
 	}
 	else
 		return false;
@@ -5196,35 +5263,35 @@ dhd_conf_read_sdio_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			dhd_doflow = FALSE;
 		else
 			dhd_doflow = TRUE;
-		CONFIG_MSG("dhd_doflow = %d\n", dhd_doflow);
+		CONFIG_MSG("dhd_doflow=%d\n", dhd_doflow);
 	}
 	else if (!strncmp("dhd_slpauto=", full_param, len_param)) {
 		if (!strncmp(data, "0", 1)) {
 			dhd_conf_disable_slpauto(dhd);
 		} else
 			dhd_slpauto = TRUE;
-		CONFIG_MSG("dhd_slpauto = %d\n", dhd_slpauto);
+		CONFIG_MSG("dhd_slpauto=%d\n", dhd_slpauto);
 	}
 	else if (!strncmp("use_rxchain=", full_param, len_param)) {
 		conf->use_rxchain = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("use_rxchain = %d\n", conf->use_rxchain);
+		CONFIG_MSG("use_rxchain=%d\n", conf->use_rxchain);
 	}
 	else if (!strncmp("dhd_txminmax=", full_param, len_param)) {
 		conf->dhd_txminmax = (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhd_txminmax = %d\n", conf->dhd_txminmax);
+		CONFIG_MSG("dhd_txminmax=%d\n", conf->dhd_txminmax);
 	}
 	else if (!strncmp("txinrx_thres=", full_param, len_param)) {
 		conf->txinrx_thres = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("txinrx_thres = %d\n", conf->txinrx_thres);
+		CONFIG_MSG("txinrx_thres=%d\n", conf->txinrx_thres);
 	}
 #ifdef DYNAMIC_MAX_HDR_READ
 	else if (!strncmp("max_hdr_read=", full_param, len_param)) {
 		conf->max_hdr_read = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("max_hdr_read = %d\n", conf->max_hdr_read);
+		CONFIG_MSG("max_hdr_read=%d\n", conf->max_hdr_read);
 	}
 	else if (!strncmp("dhd_firstread=", full_param, len_param)) {
 		firstread = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhd_firstread = %d\n", firstread);
+		CONFIG_MSG("dhd_firstread=%d\n", firstread);
 	}
 #endif
 #if defined(HW_OOB)
@@ -5233,53 +5300,53 @@ dhd_conf_read_sdio_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->oob_enabled_later = FALSE;
 		else
 			conf->oob_enabled_later = TRUE;
-		CONFIG_MSG("oob_enabled_later = %d\n", conf->oob_enabled_later);
+		CONFIG_MSG("oob_enabled_later=%d\n", conf->oob_enabled_later);
 	}
 #endif
 	else if (!strncmp("dpc_cpucore=", full_param, len_param)) {
 		conf->dpc_cpucore = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dpc_cpucore = %d\n", conf->dpc_cpucore);
+		CONFIG_MSG("dpc_cpucore=%d\n", conf->dpc_cpucore);
 	}
 	else if (!strncmp("rxf_cpucore=", full_param, len_param)) {
 		conf->rxf_cpucore = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("rxf_cpucore = %d\n", conf->rxf_cpucore);
+		CONFIG_MSG("rxf_cpucore=%d\n", conf->rxf_cpucore);
 	}
 	else if (!strncmp("dhd_dpc_prio=", full_param, len_param)) {
 		conf->dhd_dpc_prio = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhd_dpc_prio = %d\n", conf->dhd_dpc_prio);
+		CONFIG_MSG("dhd_dpc_prio=%d\n", conf->dhd_dpc_prio);
 	}
 #if defined(BCMSDIOH_TXGLOM)
 	else if (!strncmp("txglomsize=", full_param, len_param)) {
 		conf->txglomsize = (uint)simple_strtol(data, NULL, 10);
 		if (conf->txglomsize > SDPCM_MAXGLOM_SIZE)
 			conf->txglomsize = SDPCM_MAXGLOM_SIZE;
-		CONFIG_MSG("txglomsize = %d\n", conf->txglomsize);
+		CONFIG_MSG("txglomsize=%d\n", conf->txglomsize);
 	}
 	else if (!strncmp("bus:rxglom=", full_param, len_param)) {
 		if (!strncmp(data, "0", 1))
 			conf->bus_rxglom = FALSE;
 		else
 			conf->bus_rxglom = TRUE;
-		CONFIG_MSG("bus:rxglom = %d\n", conf->bus_rxglom);
+		CONFIG_MSG("bus:rxglom=%d\n", conf->bus_rxglom);
 	}
 	else if (!strncmp("deferred_tx_len=", full_param, len_param)) {
 		conf->deferred_tx_len = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("deferred_tx_len = %d\n", conf->deferred_tx_len);
+		CONFIG_MSG("deferred_tx_len=%d\n", conf->deferred_tx_len);
 	}
 	else if (!strncmp("txctl_tmo_fix=", full_param, len_param)) {
 		conf->txctl_tmo_fix = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("txctl_tmo_fix = %d\n", conf->txctl_tmo_fix);
+		CONFIG_MSG("txctl_tmo_fix=%d\n", conf->txctl_tmo_fix);
 	}
 	else if (!strncmp("tx_max_offset=", full_param, len_param)) {
 		conf->tx_max_offset = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("tx_max_offset = %d\n", conf->tx_max_offset);
+		CONFIG_MSG("tx_max_offset=%d\n", conf->tx_max_offset);
 	}
 	else if (!strncmp("txglom_mode=", full_param, len_param)) {
 		if (!strncmp(data, "0", 1))
 			conf->txglom_mode = FALSE;
 		else
 			conf->txglom_mode = TRUE;
-		CONFIG_MSG("txglom_mode = %d\n", conf->txglom_mode);
+		CONFIG_MSG("txglom_mode=%d\n", conf->txglom_mode);
 	}
 #if defined(SDIO_ISR_THREAD)
 	else if (!strncmp("intr_extn=", full_param, len_param)) {
@@ -5287,7 +5354,7 @@ dhd_conf_read_sdio_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->intr_extn = FALSE;
 		else
 			conf->intr_extn = TRUE;
-		CONFIG_MSG("intr_extn = %d\n", conf->intr_extn);
+		CONFIG_MSG("intr_extn=%d\n", conf->intr_extn);
 	}
 #endif
 #ifdef BCMSDIO_RXLIM_POST
@@ -5296,7 +5363,7 @@ dhd_conf_read_sdio_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->rxlim_en = FALSE;
 		else
 			conf->rxlim_en = TRUE;
-		CONFIG_MSG("rxlim_en = %d\n", conf->rxlim_en);
+		CONFIG_MSG("rxlim_en=%d\n", conf->rxlim_en);
 	}
 #endif
 #ifdef BCMSDIO_TXSEQ_SYNC
@@ -5305,23 +5372,23 @@ dhd_conf_read_sdio_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->txseq_sync = FALSE;
 		else
 			conf->txseq_sync = TRUE;
-		CONFIG_MSG("txseq_sync = %d\n", conf->txseq_sync);
+		CONFIG_MSG("txseq_sync=%d\n", conf->txseq_sync);
 	}
 #endif
 #endif
 #ifdef BCMSDIO_INTSTATUS_WAR
 	else if (!strncmp("read_intr_mode=", full_param, len_param)) {
 		conf->read_intr_mode = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("read_intr_mode = %d\n", conf->read_intr_mode);
+		CONFIG_MSG("read_intr_mode=%d\n", conf->read_intr_mode);
 	}
 #endif
 	else if (!strncmp("kso_try_max=", full_param, len_param)) {
 		conf->kso_try_max = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("kso_try_max = %d\n", conf->kso_try_max);
+		CONFIG_MSG("kso_try_max=%d\n", conf->kso_try_max);
 	}
 	else if (!strncmp("dhd_idletime=", full_param, len_param)) {
 		dhd_idletime = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("dhd_idletime = %d\n", dhd_idletime);
+		CONFIG_MSG("dhd_idletime=%d\n", dhd_idletime);
 	}
 	else
 		return false;
@@ -5342,27 +5409,31 @@ dhd_conf_read_pcie_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->bus_deepsleep_disable = 0;
 		else
 			conf->bus_deepsleep_disable = 1;
-		CONFIG_MSG("bus:deepsleep_disable = %d\n", conf->bus_deepsleep_disable);
+		CONFIG_MSG("bus:deepsleep_disable=%d\n", conf->bus_deepsleep_disable);
 	}
 	else if (!strncmp("flow_ring_queue_threshold=", full_param, len_param)) {
 		conf->flow_ring_queue_threshold = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("flow_ring_queue_threshold = %d\n", conf->flow_ring_queue_threshold);
+		CONFIG_MSG("flow_ring_queue_threshold=%d\n", conf->flow_ring_queue_threshold);
+	}
+	else if (!strncmp("rxbufpost_sz=", full_param, len_param)) {
+		conf->rxbufpost_sz = (int)simple_strtol(data, NULL, 10);
+		CONFIG_MSG("rxbufpost_sz=%d\n", conf->rxbufpost_sz);
 	}
 	else if (!strncmp("d2h_intr_control=", full_param, len_param)) {
 		conf->d2h_intr_control = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("d2h_intr_control = %d\n", conf->d2h_intr_control);
+		CONFIG_MSG("d2h_intr_control=%d\n", conf->d2h_intr_control);
 	}
 	else if (!strncmp("enq_hdr_pkt=", full_param, len_param)) {
 		conf->enq_hdr_pkt = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("enq_hdr_pkt = 0x%x\n", conf->enq_hdr_pkt);
+		CONFIG_MSG("enq_hdr_pkt=0x%x\n", conf->enq_hdr_pkt);
 	}
 	else if (!strncmp("aspm=", full_param, len_param)) {
 		conf->aspm = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("aspm = %d\n", conf->aspm);
+		CONFIG_MSG("aspm=%d\n", conf->aspm);
 	}
 	else if (!strncmp("l1ss=", full_param, len_param)) {
 		conf->l1ss = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("l1ss = %d\n", conf->l1ss);
+		CONFIG_MSG("l1ss=%d\n", conf->l1ss);
 	}
 	else
 		return false;
@@ -5376,61 +5447,63 @@ dhd_conf_read_pm_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 {
 	struct dhd_conf *conf = dhd->conf;
 	char *data = full_param+len_param;
+	uint val = 0;
 
 	if (!strncmp("deepsleep=", full_param, len_param)) {
 		if (!strncmp(data, "1", 1))
 			conf->deepsleep = TRUE;
 		else
 			conf->deepsleep = FALSE;
-		CONFIG_MSG("deepsleep = %d\n", conf->deepsleep);
+		CONFIG_MSG("deepsleep=%d\n", conf->deepsleep);
 	}
 	else if (!strncmp("PM=", full_param, len_param)) {
 		conf->pm = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("PM = %d\n", conf->pm);
+		CONFIG_MSG("PM=%d\n", conf->pm);
 	}
 	else if (!strncmp("pm_in_suspend=", full_param, len_param)) {
 		conf->pm_in_suspend = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("pm_in_suspend = %d\n", conf->pm_in_suspend);
+		CONFIG_MSG("pm_in_suspend=%d\n", conf->pm_in_suspend);
 	}
 	else if (!strncmp("suspend_mode=", full_param, len_param)) {
 		conf->suspend_mode = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("suspend_mode = %d\n", conf->suspend_mode);
+		CONFIG_MSG("suspend_mode=%d\n", conf->suspend_mode);
 		if (conf->suspend_mode == EARLY_SUSPEND)
 			conf->insuspend &= ~(NO_TXDATA_IN_SUSPEND | NO_TXCTL_IN_SUSPEND);
 		else if (conf->suspend_mode == PM_NOTIFIER ||
 				conf->suspend_mode == SUSPEND_MODE_2)
 			conf->insuspend |= (NO_TXDATA_IN_SUSPEND | NO_TXCTL_IN_SUSPEND);
-		CONFIG_MSG("insuspend = 0x%x\n", conf->insuspend);
+		CONFIG_MSG("insuspend=0x%x\n", conf->insuspend);
 	}
 	else if (!strncmp("suspend_bcn_li_dtim=", full_param, len_param)) {
 		conf->suspend_bcn_li_dtim = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("suspend_bcn_li_dtim = %d\n", conf->suspend_bcn_li_dtim);
+		CONFIG_MSG("suspend_bcn_li_dtim=%d\n", conf->suspend_bcn_li_dtim);
 	}
 	else if (!strncmp("xmit_in_suspend=", full_param, len_param)) {
 		if (!strncmp(data, "1", 1))
 			conf->insuspend &= ~NO_TXDATA_IN_SUSPEND;
 		else
 			conf->insuspend |= NO_TXDATA_IN_SUSPEND;
-		CONFIG_MSG("insuspend = 0x%x\n", conf->insuspend);
+		CONFIG_MSG("insuspend=0x%x\n", conf->insuspend);
 	}
 	else if (!strncmp("insuspend=", full_param, len_param)) {
-		conf->insuspend = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("insuspend = 0x%x\n", conf->insuspend);
+		dhd_conf_str2val(&conf->insuspend, data, "set", insuspend_name_map,
+			sizeof(insuspend_name_map) / sizeof(insuspend_name_map[0]));
+		CONFIG_MSG("insuspend=0x%x\n", conf->insuspend);
 	}
 	else if (!strncmp("insuspend|=", full_param, len_param)) {
-		uint val = (int)simple_strtol(data, NULL, 0);
-		conf->insuspend |= val;
-		CONFIG_MSG("insuspend |= 0x%x => 0x%x\n", val, conf->insuspend);
+		val = dhd_conf_str2val(&conf->insuspend, data, "or", insuspend_name_map,
+			sizeof(insuspend_name_map) / sizeof(insuspend_name_map[0]));
+		CONFIG_MSG("insuspend|=0x%x => 0x%x\n", val, conf->insuspend);
 	}
 #ifdef WL_EXT_WOWL
 	else if (!strncmp("wowl=", full_param, len_param)) {
 		conf->wowl = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("wowl = 0x%x\n", conf->wowl);
+		CONFIG_MSG("wowl=0x%x\n", conf->wowl);
 	}
 #ifdef BCMDBUS
 	else if (!strncmp("wowl_dngldown=", full_param, len_param)) {
 		conf->wowl_dngldown = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("wowl_dngldown = 0x%x\n", conf->wowl_dngldown);
+		CONFIG_MSG("wowl_dngldown=0x%x\n", conf->wowl_dngldown);
 	}
 #endif
 #endif
@@ -5439,7 +5512,7 @@ dhd_conf_read_pm_params(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->rekey_offload = TRUE;
 		else
 			conf->rekey_offload = FALSE;
-		CONFIG_MSG("rekey_offload = %d\n", conf->rekey_offload);
+		CONFIG_MSG("rekey_offload=%d\n", conf->rekey_offload);
 	}
 	else
 		return false;
@@ -5465,12 +5538,27 @@ bcm_str2hex(const char *p, char *ea, int size)
 }
 #endif
 
+static int
+count_commas(const char *str)
+{
+	int count = 0;
+
+	while (*str) {
+		if (*str == ',')
+			count++;
+		str++;
+	}
+
+	return count;
+}
+
 bool
 dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 {
 	struct dhd_conf *conf = dhd->conf;
 	char *data = full_param+len_param;
 	char *pch, *pick_tmp;
+	uint val = 0;
 #ifdef GET_CUSTOM_MAC_FROM_CONFIG
 	struct ether_addr ea_addr;
 #endif
@@ -5480,11 +5568,11 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->dhd_poll = 0;
 		else
 			conf->dhd_poll = 1;
-		CONFIG_MSG("dhd_poll = %d\n", conf->dhd_poll);
+		CONFIG_MSG("dhd_poll=%d\n", conf->dhd_poll);
 	}
 	else if (!strncmp("dhd_watchdog_ms=", full_param, len_param)) {
 		dhd_watchdog_ms = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhd_watchdog_ms = %d\n", dhd_watchdog_ms);
+		CONFIG_MSG("dhd_watchdog_ms=%d\n", dhd_watchdog_ms);
 	}
 	else if (!strncmp("band=", full_param, len_param)) {
 		/* Process band:
@@ -5496,44 +5584,48 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->band = WLC_BAND_5G;
 		else
 			conf->band = WLC_BAND_AUTO;
-		CONFIG_MSG("band = %d\n", conf->band);
+		CONFIG_MSG("band=%d\n", conf->band);
 	}
 	else if (!strncmp("bw_cap_2g=", full_param, len_param)) {
 		conf->bw_cap[0] = (uint)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("bw_cap_2g = %d\n", conf->bw_cap[0]);
+		CONFIG_MSG("bw_cap_2g=%d\n", conf->bw_cap[0]);
 	}
 	else if (!strncmp("bw_cap_5g=", full_param, len_param)) {
 		conf->bw_cap[1] = (uint)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("bw_cap_5g = %d\n", conf->bw_cap[1]);
+		CONFIG_MSG("bw_cap_5g=%d\n", conf->bw_cap[1]);
 	}
 	else if (!strncmp("bw_cap=", full_param, len_param)) {
 		pick_tmp = data;
 		pch = bcmstrtok(&pick_tmp, " ,.-", 0);
 		if (pch != NULL) {
 			conf->bw_cap[0] = (uint32)simple_strtol(pch, NULL, 0);
-			CONFIG_MSG("bw_cap 2g = %d\n", conf->bw_cap[0]);
+			CONFIG_MSG("bw_cap 2g=%d\n", conf->bw_cap[0]);
 		}
 		pch = bcmstrtok(&pick_tmp, " ,.-", 0);
 		if (pch != NULL) {
 			conf->bw_cap[1] = (uint32)simple_strtol(pch, NULL, 0);
-			CONFIG_MSG("bw_cap 5g = %d\n", conf->bw_cap[1]);
+			CONFIG_MSG("bw_cap 5g=%d\n", conf->bw_cap[1]);
 		}
 	}
 	else if (!strncmp("ap_mchan_mode=", full_param, len_param)) {
 		conf->ap_mchan_mode = (uint)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("ap_mchan_mode = %d\n", conf->ap_mchan_mode);
+		CONFIG_MSG("ap_mchan_mode=%d\n", conf->ap_mchan_mode);
 	}
 	else if (!strncmp("go_mchan_mode=", full_param, len_param)) {
 		conf->go_mchan_mode = (uint)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("go_mchan_mode = %d\n", conf->go_mchan_mode);
+		CONFIG_MSG("go_mchan_mode=%d\n", conf->go_mchan_mode);
 	}
 	else if (!strncmp("csa=", full_param, len_param)) {
 		conf->csa = (uint)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("csa = %d\n", conf->csa);
+		CONFIG_MSG("csa=%d\n", conf->csa);
+	}
+	else if (!strncmp("mcc=", full_param, len_param)) {
+		conf->mcc = (uint)simple_strtol(data, NULL, 0);
+		CONFIG_MSG("mcc=%d\n", conf->mcc);
 	}
 	else if (!strncmp("keep_alive_period=", full_param, len_param)) {
 		conf->keep_alive_period = (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("keep_alive_period = %d\n", conf->keep_alive_period);
+		CONFIG_MSG("keep_alive_period=%d\n", conf->keep_alive_period);
 	}
 #ifdef ARP_OFFLOAD_SUPPORT
 	else if (!strncmp("garp=", full_param, len_param)) {
@@ -5541,69 +5633,73 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->garp = FALSE;
 		else
 			conf->garp = TRUE;
-		CONFIG_MSG("garp = %d\n", conf->garp);
+		CONFIG_MSG("garp=%d\n", conf->garp);
 	}
 #endif
 	else if (!strncmp("srl=", full_param, len_param)) {
 		conf->srl = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("srl = %d\n", conf->srl);
+		CONFIG_MSG("srl=%d\n", conf->srl);
 	}
 	else if (!strncmp("lrl=", full_param, len_param)) {
 		conf->lrl = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("lrl = %d\n", conf->lrl);
+		CONFIG_MSG("lrl=%d\n", conf->lrl);
 	}
 	else if (!strncmp("bcn_timeout=", full_param, len_param)) {
 		conf->bcn_timeout= (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("bcn_timeout = %d\n", conf->bcn_timeout);
+		CONFIG_MSG("bcn_timeout=%d\n", conf->bcn_timeout);
 	}
 	else if (!strncmp("frameburst=", full_param, len_param)) {
 		conf->frameburst = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("frameburst = %d\n", conf->frameburst);
+		CONFIG_MSG("frameburst=%d\n", conf->frameburst);
 	}
 	else if (!strncmp("disable_proptx=", full_param, len_param)) {
 		conf->disable_proptx = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("disable_proptx = %d\n", conf->disable_proptx);
+		CONFIG_MSG("disable_proptx=%d\n", conf->disable_proptx);
 	}
 #ifdef DHDTCPACK_SUPPRESS
 	else if (!strncmp("tcpack_sup_mode=", full_param, len_param)) {
 		conf->tcpack_sup_mode = (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("tcpack_sup_mode = %d\n", conf->tcpack_sup_mode);
+		CONFIG_MSG("tcpack_sup_mode=%d\n", conf->tcpack_sup_mode);
 	}
 	else if (!strncmp("tcpack_sup_ratio=", full_param, len_param)) {
 		conf->tcpack_sup_ratio = (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("tcpack_sup_ratio = %d\n", conf->tcpack_sup_ratio);
+		CONFIG_MSG("tcpack_sup_ratio=%d\n", conf->tcpack_sup_ratio);
 	}
 	else if (!strncmp("tcpack_sup_delay=", full_param, len_param)) {
 		conf->tcpack_sup_delay = (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("tcpack_sup_delay = %d\n", conf->tcpack_sup_delay);
+		CONFIG_MSG("tcpack_sup_delay=%d\n", conf->tcpack_sup_delay);
 	}
 #endif
 	else if (!strncmp("pktprio8021x=", full_param, len_param)) {
 		conf->pktprio8021x = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("pktprio8021x = %d\n", conf->pktprio8021x);
+		CONFIG_MSG("pktprio8021x=%d\n", conf->pktprio8021x);
 	}
 #if defined(BCMSDIO)
 	else if (!strncmp("dhd_txbound=", full_param, len_param)) {
 		dhd_txbound = (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhd_txbound = %d\n", dhd_txbound);
+		CONFIG_MSG("dhd_txbound=%d\n", dhd_txbound);
 	}
 	else if (!strncmp("dhd_rxbound=", full_param, len_param)) {
 		dhd_rxbound = (uint)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("dhd_rxbound = %d\n", dhd_rxbound);
+		CONFIG_MSG("dhd_rxbound=%d\n", dhd_rxbound);
 	}
 #endif
+	else if (!strncmp("tcp_pacing_shift=", full_param, len_param)) {
+		conf->tcp_pacing_shift = (int)simple_strtol(data, NULL, 10);
+		CONFIG_MSG("tcp_pacing_shift=%d\n", conf->tcp_pacing_shift);
+	}
 	else if (!strncmp("ctrl_resched=", full_param, len_param)) {
 		conf->ctrl_resched = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("ctrl_resched = %d\n", conf->ctrl_resched);
+		CONFIG_MSG("ctrl_resched=%d\n", conf->ctrl_resched);
 	}
 	else if (!strncmp("rxcnt_timeout=", full_param, len_param)) {
 		conf->rxcnt_timeout = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("rxcnt_timeout = %d\n", conf->rxcnt_timeout);
+		CONFIG_MSG("rxcnt_timeout=%d\n", conf->rxcnt_timeout);
 	}
 #ifdef WL_MLO
 	else if (!strncmp("mlo_sta_disable=", full_param, len_param)) {
 		mlo_sta_disable = (int)simple_strtol(data, NULL, 10);
-		CONFIG_MSG("mlo_sta_disable = %d\n", mlo_sta_disable);
+		CONFIG_MSG("mlo_sta_disable=%d\n", mlo_sta_disable);
 	}
 #endif /* WL_MLO */
 #ifdef BCMSUP_4WAY_HANDSHAKE
@@ -5612,7 +5708,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			dhd_use_idsup = FALSE;
 		else
 			dhd_use_idsup = TRUE;
-		CONFIG_MSG("dhd_use_idsup = %d\n", dhd_use_idsup);
+		CONFIG_MSG("dhd_use_idsup=%d\n", dhd_use_idsup);
 	}
 #endif /* BCMSUP_4WAY_HANDSHAKE */
 #ifdef WL_IDAUTH
@@ -5621,17 +5717,18 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			idauth_enable = FALSE;
 		else
 			idauth_enable = TRUE;
-		CONFIG_MSG("idauth_enable = %d\n", idauth_enable);
+		CONFIG_MSG("idauth_enable=%d\n", idauth_enable);
 	}
 #endif /* WL_IDAUTH */
 	else if (!strncmp("in4way=", full_param, len_param)) {
-		conf->in4way = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("in4way = 0x%x\n", conf->in4way);
+		dhd_conf_str2val(&conf->in4way, data, "set", in4way_name_map,
+			sizeof(in4way_name_map) / sizeof(in4way_name_map[0]));
+		CONFIG_MSG("in4way=0x%x\n", conf->in4way);
 	}
 	else if (!strncmp("in4way|=", full_param, len_param)) {
-		uint val = (int)simple_strtol(data, NULL, 0);
-		conf->in4way |= val;
-		CONFIG_MSG("in4way |= 0x%x => 0x%x\n", val, conf->in4way);
+		val = dhd_conf_str2val(&conf->in4way, data, "or", in4way_name_map,
+			sizeof(in4way_name_map) / sizeof(in4way_name_map[0]));
+		CONFIG_MSG("in4way|=0x%x => 0x%x\n", val, conf->in4way);
 	}
 	else if (!strncmp("wl_pre_in4way=", full_param, len_param)) {
 		if (conf->wl_pre_in4way) {
@@ -5643,7 +5740,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->wl_pre_in4way, 0, strlen(data)+1);
 			strcpy(conf->wl_pre_in4way, data);
-			CONFIG_MSG("wl_pre_in4way = %s\n", conf->wl_pre_in4way);
+			CONFIG_MSG("wl_pre_in4way=%s\n", conf->wl_pre_in4way);
 		}
 	}
 	else if (!strncmp("wl_post_in4way=", full_param, len_param)) {
@@ -5656,23 +5753,45 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->wl_post_in4way, 0, strlen(data)+1);
 			strcpy(conf->wl_post_in4way, data);
-			CONFIG_MSG("wl_post_in4way = %s\n", conf->wl_post_in4way);
+			CONFIG_MSG("wl_post_in4way=%s\n", conf->wl_post_in4way);
 		}
+	}
+	else if (!strncmp("mac_list=", full_param, len_param)) {
+		uint32 mem_needed, num, i;
+		if (conf->mac_list) {
+			kfree(conf->mac_list);
+			conf->mac_list = NULL;
+		}
+		pick_tmp = data;
+		num = count_commas(data) + 1;
+		mem_needed = (uint32) (OFFSETOF(maclist_t, ea) +
+			sizeof(struct ether_addr) * (num) + 1);
+		conf->mac_list = (maclist_t *)kmalloc(mem_needed, GFP_KERNEL);
+		pch = bcmstrtok(&pick_tmp, ",.-", 0);
+		for (i = 0; i < num && pch; i++) {
+			if (!mac_pton(pch, (u8 *)&(conf->mac_list->ea[i]))) {
+				break;
+			}
+			pch = bcmstrtok(&pick_tmp, ",.-", 0);
+		}
+		conf->mac_list->count = i;
+		CONFIG_MSG("%d mac in mac_list\n", conf->mac_list->count);
 	}
 #ifdef BTC_WAR
 	else if (!strncmp("btc_war=", full_param, len_param)) {
 		btc_war = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("btc_war = 0x%x\n", btc_war);
+		CONFIG_MSG("btc_war=0x%x\n", btc_war);
 	}
 #endif /* BTC_WAR */
 	else if (!strncmp("war=", full_param, len_param)) {
-		conf->war = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("war = 0x%x\n", conf->war);
+		dhd_conf_str2val(&conf->war, data, "set", war_name_map,
+			sizeof(war_name_map) / sizeof(war_name_map[0]));
+		CONFIG_MSG("war=0x%x\n", conf->war);
 	}
 	else if (!strncmp("war|=", full_param, len_param)) {
-		uint val = (int)simple_strtol(data, NULL, 0);
-		conf->war |= val;
-		CONFIG_MSG("war |= 0x%x => 0x%x\n", val, conf->war);
+		val = dhd_conf_str2val(&conf->war, data, "or", war_name_map,
+			sizeof(war_name_map) / sizeof(war_name_map[0]));
+		CONFIG_MSG("war|=0x%x => 0x%x\n", val, conf->war);
 	}
 	else if (!strncmp("wl_preinit=", full_param, len_param)) {
 		if (conf->wl_preinit) {
@@ -5684,7 +5803,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->wl_preinit, 0, strlen(data)+1);
 			strcpy(conf->wl_preinit, data);
-			CONFIG_MSG("wl_preinit = %s\n", conf->wl_preinit);
+			CONFIG_MSG("wl_preinit=%s\n", conf->wl_preinit);
 		}
 	}
 	else if (!strncmp("wl_suspend=", full_param, len_param)) {
@@ -5697,7 +5816,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->wl_suspend, 0, strlen(data)+1);
 			strcpy(conf->wl_suspend, data);
-			CONFIG_MSG("wl_suspend = %s\n", conf->wl_suspend);
+			CONFIG_MSG("wl_suspend=%s\n", conf->wl_suspend);
 		}
 	}
 	else if (!strncmp("wl_resume=", full_param, len_param)) {
@@ -5710,7 +5829,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->wl_resume, 0, strlen(data)+1);
 			strcpy(conf->wl_resume, data);
-			CONFIG_MSG("wl_resume = %s\n", conf->wl_resume);
+			CONFIG_MSG("wl_resume=%s\n", conf->wl_resume);
 		}
 	}
 #ifdef GET_CUSTOM_MAC_FROM_CONFIG
@@ -5720,28 +5839,28 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			return false;
 		}
 		memcpy(&conf->hw_ether, &ea_addr, ETHER_ADDR_LEN);
-		CONFIG_MSG("mac = %s\n", data);
+		CONFIG_MSG("mac=%s\n", data);
 	}
 #endif
 #ifdef PROPTX_MAXCOUNT
 	else if (!strncmp("proptx_maxcnt_2g=", full_param, len_param)) {
 		conf->proptx_maxcnt_2g = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("proptx_maxcnt_2g = %d\n", conf->proptx_maxcnt_2g);
+		CONFIG_MSG("proptx_maxcnt_2g=%d\n", conf->proptx_maxcnt_2g);
 	}
 	else if (!strncmp("proptx_maxcnt_5g=", full_param, len_param)) {
 		conf->proptx_maxcnt_5g = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("proptx_maxcnt_5g = %d\n", conf->proptx_maxcnt_5g);
+		CONFIG_MSG("proptx_maxcnt_5g=%d\n", conf->proptx_maxcnt_5g);
 	}
 #endif
 #ifdef TPUT_MONITOR
 	else if (!strncmp("tput_monitor_ms=", full_param, len_param)) {
 		conf->tput_monitor_ms = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("tput_monitor_ms = %d\n", conf->tput_monitor_ms);
+		CONFIG_MSG("tput_monitor_ms=%d\n", conf->tput_monitor_ms);
 	}
 #ifdef BCMSDIO
 	else if (!strncmp("doflow_tput_thresh=", full_param, len_param)) {
 		conf->doflow_tput_thresh = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("doflow_tput_thresh = %d\n", conf->doflow_tput_thresh);
+		CONFIG_MSG("doflow_tput_thresh=%d\n", conf->doflow_tput_thresh);
 		if (conf->doflow_tput_thresh > 0)
 			conf->tput_monitor_ms = 1000;
 	}
@@ -5749,27 +5868,28 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 #endif
 #ifdef SCAN_SUPPRESS
 	else if (!strncmp("scan_intput=", full_param, len_param)) {
-		conf->scan_intput = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("scan_intput = 0x%x\n", conf->scan_intput);
+		dhd_conf_str2val(&conf->scan_intput, data, "set", scan_intput_name_map,
+			sizeof(scan_intput_name_map) / sizeof(scan_intput_name_map[0]));
+		CONFIG_MSG("scan_intput=0x%x\n", conf->scan_intput);
 	}
 	else if (!strncmp("scan_intput|=", full_param, len_param)) {
-		uint val = (int)simple_strtol(data, NULL, 0);
-		conf->scan_intput |= val;
-		CONFIG_MSG("scan_intput |= 0x%x => 0x%x\n", val, conf->scan_intput);
+		val = dhd_conf_str2val(&conf->scan_intput, data, "or", scan_intput_name_map,
+			sizeof(scan_intput_name_map) / sizeof(scan_intput_name_map[0]));
+		CONFIG_MSG("scan_intput|=0x%x => 0x%x\n", val, conf->scan_intput);
 	}
 	else if (!strncmp("scan_tput_thresh=", full_param, len_param)) {
 		conf->scan_tput_thresh = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("scan_tput_thresh = %d\n", conf->scan_tput_thresh);
+		CONFIG_MSG("scan_tput_thresh=%d\n", conf->scan_tput_thresh);
 		if (conf->scan_tput_thresh > 0)
 			conf->tput_monitor_ms = 1000;
 	}
 	else if (!strncmp("scan_busy_tmo=", full_param, len_param)) {
 		conf->scan_busy_tmo = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("scan_busy_tmo = %d\n", conf->scan_busy_tmo);
+		CONFIG_MSG("scan_busy_tmo=%d\n", conf->scan_busy_tmo);
 	}
 	else if (!strncmp("scan_busy_thresh=", full_param, len_param)) {
 		conf->scan_busy_thresh = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("scan_busy_thresh = %d\n", conf->scan_busy_thresh);
+		CONFIG_MSG("scan_busy_thresh=%d\n", conf->scan_busy_thresh);
 	}
 #endif
 #ifdef DHD_TPUT_PATCH
@@ -5778,19 +5898,19 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->tput_patch = TRUE;
 		else
 			conf->tput_patch = FALSE;
-		CONFIG_MSG("tput_patch = %d\n", conf->tput_patch);
+		CONFIG_MSG("tput_patch=%d\n", conf->tput_patch);
 		dhd_conf_set_tput_patch(dhd);
 	}
 	else if (!strncmp("mtu=", full_param, len_param)) {
 		conf->mtu = (int)simple_strtol(data, NULL, 0);
-		CONFIG_MSG("mtu = %d\n", conf->mtu);
+		CONFIG_MSG("mtu=%d\n", conf->mtu);
 	}
 	else if (!strncmp("pktsetsum=", full_param, len_param)) {
 		if (!strncmp(data, "1", 1))
 			conf->pktsetsum = TRUE;
 		else
 			conf->pktsetsum = FALSE;
-		CONFIG_MSG("pktsetsum = %d\n", conf->pktsetsum);
+		CONFIG_MSG("pktsetsum=%d\n", conf->pktsetsum);
 	}
 #endif
 #ifdef SET_XPS_CPUS
@@ -5804,7 +5924,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->xps_cpus, 0, strlen(data)+1);
 			strcpy(conf->xps_cpus, data);
-			CONFIG_MSG("xps_cpus = %s\n", conf->xps_cpus);
+			CONFIG_MSG("xps_cpus=%s\n", conf->xps_cpus);
 		}
 	}
 #endif
@@ -5819,7 +5939,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->rps_cpus, 0, strlen(data)+1);
 			strcpy(conf->rps_cpus, data);
-			CONFIG_MSG("rps_cpus = %s\n", conf->rps_cpus);
+			CONFIG_MSG("rps_cpus=%s\n", conf->rps_cpus);
 		}
 	}
 #endif
@@ -5829,7 +5949,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 			conf->fwchk = TRUE;
 		else
 			conf->fwchk = FALSE;
-		CONFIG_MSG("fwchk = %d\n", conf->fwchk);
+		CONFIG_MSG("fwchk=%d\n", conf->fwchk);
 	}
 #endif
 	else if (!strncmp("vndr_ie_assocreq=", full_param, len_param)) {
@@ -5842,7 +5962,7 @@ dhd_conf_read_others(dhd_pub_t *dhd, char *full_param, uint len_param)
 		} else {
 			memset(conf->vndr_ie_assocreq, 0, strlen(data)+1);
 			strcpy(conf->vndr_ie_assocreq, data);
-			CONFIG_MSG("vndr_ie_assocreq = %s\n", conf->vndr_ie_assocreq);
+			CONFIG_MSG("vndr_ie_assocreq=%s\n", conf->vndr_ie_assocreq);
 		}
 	}
 	else
@@ -6225,53 +6345,14 @@ dhd_conf_preinit_ioctls_sta(dhd_pub_t *dhd, int ifidx)
 
 #ifdef WL_CFG80211
 static void
-dhd_conf_postinit_cfg80211(dhd_pub_t *dhd, int ifidx)
+dhd_conf_postinit_hs_offload(struct bcm_cfg80211 *cfg)
 {
-	struct dhd_conf *conf = dhd->conf;
-	struct net_device *net = dhd_idx2net(dhd, ifidx);
-	struct bcm_cfg80211 *cfg = wl_get_cfg(net);
-#if defined(WL_SCHED_SCAN) || (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)) || defined(WL_STA_4WAY_HS_BKPORT)
 	struct wiphy *wiphy = cfg->wdev->wiphy;
-#endif /* WL_SCHED_SCAN */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0) || WL_STA_4WAY_HS_BKPORT */
+	dhd_pub_t *dhd = cfg->pub;
 	uint32 sup_wpa = 0;
 	int ret;
-
-#ifndef DISABLE_BUILTIN_ROAM
-	cfg->roam_on = conf->roam_off ? false : true;
-#endif
-	if (conf->roam_off)
-		cfg->roam_flags = 0;
-	else
-		cfg->roam_flags |= WL_ROAM_OFF_ON_CONCURRENT;
-
-#ifdef WL_SCHED_SCAN
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
-	if (conf->max_sched_scan_reqs > 0)
-		wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
-	else if (conf->max_sched_scan_reqs == 0)
-		wiphy->flags &= ~WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
-#else
-	if (conf->max_sched_scan_reqs > 0)
-		wiphy->max_sched_scan_reqs = 1;
-	else if (conf->max_sched_scan_reqs == 0)
-		wiphy->max_sched_scan_reqs = 0;
-#endif /* LINUX_VER < 4.12 */
-#endif /* WL_SCHED_SCAN */
-
-#ifdef WL_MLO
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2)) || defined(WL_MLO_BKPORT)
-	if (!mlo_sta_disable) {
-		if (!(wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO))
-			CONFIG_ERROR("WIPHY_FLAG_SUPPORTS_MLO 0 => 1\n");
-		wiphy->flags |= WIPHY_FLAG_SUPPORTS_MLO;
-	} else {
-		if (wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO)
-			CONFIG_ERROR("WIPHY_FLAG_SUPPORTS_MLO 1 => 0\n");
-		wiphy->flags &= ~WIPHY_FLAG_SUPPORTS_MLO;
-	}
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2) || WL_MLO_BKPORT */
-	CONFIG_MSG("mlo_sta_disable = %d\n", mlo_sta_disable);
-#endif /* WL_MLO */
 
 	ret = dhd_iovar(dhd, 0, "sup_wpa", NULL, 0, (char *)&sup_wpa, sizeof(sup_wpa), FALSE);
 #ifdef BCMSUP_4WAY_HANDSHAKE
@@ -6279,7 +6360,7 @@ dhd_conf_postinit_cfg80211(dhd_pub_t *dhd, int ifidx)
 		dhd->fw_4way_handshake = 0;
 	CONFIG_MSG("fw_4way_handshake = %d (dhd dhd_use_idsup %d, fw sup_wpa %d)\n",
 		dhd->fw_4way_handshake, dhd_use_idsup, ret ? ret : sup_wpa);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)) || defined(WL_STA_4WAY_HS_BKPORT)
 	if (dhd->fw_4way_handshake) {
 		if (!wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_PSK))
 			CONFIG_ERROR("NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_PSK 0 => 1\n");
@@ -6287,6 +6368,13 @@ dhd_conf_postinit_cfg80211(dhd_pub_t *dhd, int ifidx)
 			CONFIG_ERROR("NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X 0 => 1\n");
 		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_PSK);
 		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)) || defined(WL_STA_SAE_HS_BKPORT)
+		if (!wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_SAE_OFFLOAD))
+			CONFIG_ERROR("NL80211_EXT_FEATURE_SAE_OFFLOAD 0 => 1\n");
+		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SAE_OFFLOAD);
+#else
+		CONFIG_ERROR("WL_STA_SAE_HS_BKPORT not patched\n");
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0) || WL_STA_SAE_HS_BKPORT */
 	} else {
 		u8 *ft_byte;
 		if (wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_PSK))
@@ -6297,12 +6385,22 @@ dhd_conf_postinit_cfg80211(dhd_pub_t *dhd, int ifidx)
 		*ft_byte &= ~BIT(NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_PSK % 8);
 		ft_byte = &wiphy->ext_features[NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X / 8];
 		*ft_byte &= ~BIT(NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X % 8);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)) || defined(WL_STA_SAE_HS_BKPORT)
+		if (wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_SAE_OFFLOAD))
+			CONFIG_ERROR("NL80211_EXT_FEATURE_SAE_OFFLOAD 1 => 0\n");
+		ft_byte = &wiphy->ext_features[NL80211_EXT_FEATURE_SAE_OFFLOAD / 8];
+		*ft_byte &= ~BIT(NL80211_EXT_FEATURE_SAE_OFFLOAD % 8);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0) || WL_STA_SAE_HS_BKPORT */
 	}
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0) */
+#else
+	if (dhd->fw_4way_handshake)
+		CONFIG_ERROR("WL_STA_4WAY_HS_BKPORT not patched\n");
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0) || WL_STA_4WAY_HS_BKPORT */
 #else
 	if (!ret && sup_wpa)
 		CONFIG_ERROR("fw sup_wpa should be disabled\n");
 #endif /* BCMSUP_4WAY_HANDSHAKE */
+
 #ifdef WL_IDAUTH
 	if (idauth_enable && FW_SUPPORTED(dhd, idauth))
 		cfg->idauth_enabled = TRUE;
@@ -6315,18 +6413,32 @@ dhd_conf_postinit_cfg80211(dhd_pub_t *dhd, int ifidx)
 		if (!wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK))
 			CONFIG_ERROR("NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK 0 => 1\n");
 		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)) || defined(WL_AP_SAE_HS_BKPORT)
+		if (!wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_SAE_OFFLOAD_AP))
+			CONFIG_ERROR("NL80211_EXT_FEATURE_SAE_OFFLOAD_AP 0 => 1\n");
+		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SAE_OFFLOAD_AP);
+#else
+		CONFIG_ERROR("WL_AP_SAE_HS_BKPORT not patched\n");
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || WL_AP_SAE_HS_BKPORT */
 	} else {
 		u8 *ft_byte;
 		if (wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK))
 			CONFIG_ERROR("NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK 1 => 0\n");
 		ft_byte = &wiphy->ext_features[NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK / 8];
 		*ft_byte &= ~BIT(NL80211_EXT_FEATURE_4WAY_HANDSHAKE_AP_PSK % 8);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)) || defined(WL_AP_SAE_HS_BKPORT)
+		if (wiphy_ext_feature_isset(wiphy, NL80211_EXT_FEATURE_SAE_OFFLOAD_AP))
+			CONFIG_ERROR("NL80211_EXT_FEATURE_SAE_OFFLOAD_AP 1 => 0\n");
+		ft_byte = &wiphy->ext_features[NL80211_EXT_FEATURE_SAE_OFFLOAD_AP / 8];
+		*ft_byte &= ~BIT(NL80211_EXT_FEATURE_SAE_OFFLOAD_AP % 8);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || WL_AP_SAE_HS_BKPORT */
 	}
 #else
 	if (cfg->idauth_enabled)
 		CONFIG_ERROR("WL_AP_4WAY_HS_BKPORT not patched\n");
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) || WL_AP_4WAY_HS_BKPORT */
 #endif /* WL_IDAUTH */
+
 #ifdef WL_OWE_OFFLD
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)) || defined(WL_OWE_OFFLD_BKPORT)
 	if (dhd->fw_4way_handshake) {
@@ -6356,6 +6468,57 @@ dhd_conf_postinit_cfg80211(dhd_pub_t *dhd, int ifidx)
 		CONFIG_ERROR("WL_OWE_OFFLD_BKPORT not patched\n");
 #endif /* LINUX > 6.7 || WL_OWE_OFFLD_BKPORT */
 #endif /* WL_OWE_OFFLD */
+}
+
+static void
+dhd_conf_postinit_cfg80211(dhd_pub_t *dhd)
+{
+	struct dhd_conf *conf = dhd->conf;
+	struct net_device *net = dhd_idx2net(dhd, 0);
+	struct bcm_cfg80211 *cfg = wl_get_cfg(net);
+#if defined(WL_SCHED_SCAN) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2))
+	struct wiphy *wiphy = cfg->wdev->wiphy;
+#endif /* WL_SCHED_SCAN */
+
+#ifndef DISABLE_BUILTIN_ROAM
+	cfg->roam_on = conf->roam_off ? false : true;
+#endif
+	if (conf->roam_off)
+		cfg->roam_flags = 0;
+	else
+		cfg->roam_flags |= WL_ROAM_OFF_ON_CONCURRENT;
+
+#ifdef WL_SCHED_SCAN
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
+	if (conf->max_sched_scan_reqs > 0)
+		wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+	else if (conf->max_sched_scan_reqs == 0)
+		wiphy->flags &= ~WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+#else
+	if (conf->max_sched_scan_reqs > 0)
+		wiphy->max_sched_scan_reqs = 1;
+	else if (conf->max_sched_scan_reqs == 0)
+		wiphy->max_sched_scan_reqs = 0;
+#endif /* LINUX_VER < 4.12 */
+#endif /* WL_SCHED_SCAN */
+	dhd_conf_set_blacklist_bssid(dhd, 0);
+
+#ifdef WL_MLO
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2)) || defined(WL_MLO_BKPORT)
+	if (!mlo_sta_disable) {
+		if (!(wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO))
+			CONFIG_ERROR("WIPHY_FLAG_SUPPORTS_MLO 0 => 1\n");
+		wiphy->flags |= WIPHY_FLAG_SUPPORTS_MLO;
+	} else {
+		if (wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO)
+			CONFIG_ERROR("WIPHY_FLAG_SUPPORTS_MLO 1 => 0\n");
+		wiphy->flags &= ~WIPHY_FLAG_SUPPORTS_MLO;
+	}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2) || WL_MLO_BKPORT */
+	CONFIG_MSG("mlo_sta_disable = %d\n", mlo_sta_disable);
+#endif /* WL_MLO */
+
+	dhd_conf_postinit_hs_offload(cfg);
 }
 #endif /* WL_CFG80211 */
 
@@ -6465,11 +6628,17 @@ dhd_conf_postinit_ioctls(dhd_pub_t *dhd)
 		dhd_conf_set_wl_cmd(dhd, ampdu_hostreorder, TRUE);
 	}
 #ifdef AVOID_MASTER_6G
-	/* Not supported RSDB 6E chip should set mapsta_mode=2 */
-	if (conf->chip == BCM43711_CHIP_ID || conf->chip == BCM4612_CHIP_ID ||
+	if (conf->chip == SYNA43711_CHIP_ID ||
 			conf->chip == BCM43756_CHIP_ID || conf->chip == BCM4381_CHIP_ID) {
+		/* Not supported RSDB 6E chip should set mapsta_mode=2 */
 		char mapsta_mode[16] = "";
 		snprintf(mapsta_mode, sizeof(mapsta_mode), "mapsta_mode=%d", MCHAN_APSTA_NO_RESTRICT);
+		dhd_conf_set_wl_cmd(dhd, mapsta_mode, FALSE);
+	}
+	else if (conf->chip == BCM4384_CHIP_ID) {
+		/* RSDB 6E chip should set mapsta_mode=1 */
+		char mapsta_mode[16] = "";
+		snprintf(mapsta_mode, sizeof(mapsta_mode), "mapsta_mode=%d", MCHAN_APSTA_SBSC);
 		dhd_conf_set_wl_cmd(dhd, mapsta_mode, FALSE);
 	}
 #endif /* AVOID_MASTER_6G */
@@ -6484,13 +6653,53 @@ dhd_conf_postinit_ioctls(dhd_pub_t *dhd)
 	dhd_conf_set_wl_cmd(dhd, conf->wl_preinit, TRUE);
 
 #ifdef WL_CFG80211
-	dhd_conf_postinit_cfg80211(dhd, 0);
+	dhd_conf_postinit_cfg80211(dhd);
 #endif /* WL_CFG80211 */
 
 #ifndef WL_CFG80211
 	dhd_conf_set_intiovar(dhd, 0, WLC_UP, "WLC_UP", 0, 0, FALSE);
 #endif
 }
+
+#ifdef WL_MLO
+static void
+dhd_conf_preinit_mlo(dhd_pub_t *dhd)
+{
+	/* MLO is supported in Linux OS or Android 14-r50 later */
+#if (ANDROID_VERSION == 0 || ANDROID_VERSION >= 14)
+	if (!dhd_conf_mlo_chip(dhd))
+		mlo_sta_disable = TRUE;
+#else
+	mlo_sta_disable = TRUE;
+#endif /* ANDROID_VERSION == 0 || ANDROID_VERSION >= 14 */
+}
+#endif /* WL_MLO */
+
+#if defined(BCMSUP_4WAY_HANDSHAKE) || defined(WL_IDAUTH)
+static void
+dhd_conf_preinit_idsup_idauth(dhd_pub_t *dhd)
+{
+	/* For Wi-Fi 7 later chip, FW idsup and idauth have to be used for MLO connection, all the SAE and
+	  * WPA handshaking are offloaded in FW side.
+	  * For other old chips, keep using host wpa_supplicant and hostapd for the handshaking.
+	  */
+	if (dhd_conf_mlo_chip(dhd)) {
+#ifdef BCMSUP_4WAY_HANDSHAKE
+		dhd_use_idsup = TRUE;
+#endif /* BCMSUP_4WAY_HANDSHAKE */
+#ifdef WL_IDAUTH
+		idauth_enable = TRUE;
+#endif /* WL_IDAUTH */
+	} else {
+#ifdef BCMSUP_4WAY_HANDSHAKE
+		dhd_use_idsup = FALSE;
+#endif /* BCMSUP_4WAY_HANDSHAKE */
+#ifdef WL_IDAUTH
+		idauth_enable = FALSE;
+#endif /* WL_IDAUTH */
+	}
+}
+#endif /* BCMSUP_4WAY_HANDSHAKE || WL_IDAUTH */
 
 void
 dhd_conf_free_preinit(dhd_pub_t *dhd)
@@ -6535,6 +6744,10 @@ dhd_conf_free_preinit(dhd_pub_t *dhd)
 		kfree(conf->wl_post_in4way);
 		conf->wl_post_in4way = NULL;
 	}
+	if (conf->mac_list) {
+		kfree(conf->mac_list);
+		conf->mac_list = NULL;
+	}
 #ifdef SET_XPS_CPUS
 	if (conf->xps_cpus) {
 		kfree(conf->xps_cpus);
@@ -6566,6 +6779,7 @@ dhd_conf_preinit(dhd_pub_t *dhd)
 	conf->ap_mchan_mode = MCHAN_AUTO;
 	conf->go_mchan_mode = MCHAN_AUTO;
 	conf->csa = -1;
+	conf->mcc = -1;
 	if (conf->chip == BCM4345_CHIP_ID || conf->chip == BCM4359_CHIP_ID ||
 			conf->chip == BCM4375_CHIP_ID) {
 		strcpy(conf->cspec.country_abbrev, "CN");
@@ -6590,7 +6804,12 @@ dhd_conf_preinit(dhd_pub_t *dhd)
 //	strcpy(conf->ccode_all.cspec.ccode, "AA");
 	conf->ccode_all.ww_2g_chan_only = 0x2;
 
-	dhd_conf_idsup_idauth_chip(dhd);
+#ifdef WL_MLO
+	dhd_conf_preinit_mlo(dhd);
+#endif /* WL_MLO */
+#if defined(BCMSUP_4WAY_HANDSHAKE) || defined(WL_IDAUTH)
+	dhd_conf_preinit_idsup_idauth(dhd);
+#endif /* BCMSUP_4WAY_HANDSHAKE || WL_IDAUTH */
 
 	conf->ioctl_ver = WLC_IOCTL_VERSION;
 	conf->wbtext = FALSE;
@@ -6624,7 +6843,11 @@ dhd_conf_preinit(dhd_pub_t *dhd)
 	conf->srl = -1;
 	conf->lrl = -1;
 	conf->bcn_timeout = 16;
+#ifdef DHD_HWTSTAMP
+	conf->disable_proptx = 0;
+#else
 	conf->disable_proptx = -1;
+#endif
 	conf->dhd_poll = -1;
 #ifdef BCMSDIO
 	conf->use_rxchain = 0;
@@ -6660,6 +6883,7 @@ dhd_conf_preinit(dhd_pub_t *dhd)
 #ifdef BCMPCIE
 	conf->bus_deepsleep_disable = -1;
 	conf->flow_ring_queue_threshold = -1;
+	conf->rxbufpost_sz = 0;
 #ifdef DHD_MSI_SUPPORT
 	conf->d2h_intr_method = PCIE_MSI;
 #else
@@ -6708,6 +6932,11 @@ dhd_conf_preinit(dhd_pub_t *dhd)
 	conf->dhcpc_enable = -1;
 	conf->dhcpd_enable = -1;
 #endif
+#ifdef DHD_DEFAULT_TCP_PACING_SHIFT
+	conf->tcp_pacing_shift = DHD_DEFAULT_TCP_PACING_SHIFT;
+#else
+	conf->tcp_pacing_shift = 0;
+#endif /* DHD_DEFAULT_TCP_PACING_SHIFT */
 #ifdef DHDTCPACK_SUPPRESS
 #ifdef BCMPCIE
 	conf->tcpack_sup_mode = TCPACK_SUP_HOLD;
@@ -6720,11 +6949,13 @@ dhd_conf_preinit(dhd_pub_t *dhd)
 	conf->pktprio8021x = -1;
 	conf->ctrl_resched = 2;
 	conf->rxcnt_timeout = 3;
-	conf->in4way = STA_NO_SCAN_IN4WAY | STA_WAIT_DISCONNECTED |
-		AP_WAIT_STA_RECONNECT;
+	if (!dhd_conf_mlo_chip(dhd)) {
+		conf->in4way = STA_NO_SCAN_IN4WAY | STA_WAIT_DISCONNECTED |
+			AP_WAIT_STA_RECONNECT;
 #ifdef WL_EXT_RECONNECT
-	conf->in4way |= STA_REASSOC_RETRY;
+		conf->in4way |= STA_RECONNECT_RETRY;
 #endif
+	}
 	if (conf->chip == BCM43752_CHIP_ID)
 		conf->war = SET_CHAN_INCONN | FW_REINIT_INCSA | FW_REINIT_EMPTY_SCAN |
 			FW_REINIT_RXF0OVFL;

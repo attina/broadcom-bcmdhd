@@ -15,14 +15,21 @@ bcmdhd_wlan {
 	compatible = "android,bcmdhd_wlan";
 	gpio_wl_reg_on = <&gpio GPIOH_4 GPIO_ACTIVE_HIGH>;
 	gpio_wl_host_wake = <&gpio GPIOZ_15 GPIO_ACTIVE_HIGH>;
+	gpio_wl_gpio_tsf = <&gpio GPIOZ_16 GPIO_ACTIVE_HIGH>;
 };
 */
 #define DHD_DT_COMPAT_ENTRY		"android,bcmdhd_wlan"
 #define GPIO_WL_REG_ON_PROPNAME		"gpio_wl_reg_on" ADAPTER_IDX_STR
 #define GPIO_WL_HOST_WAKE_PROPNAME	"gpio_wl_host_wake" ADAPTER_IDX_STR
+#ifdef OOB_GPIO_TSF_INTR
+#define GPIO_WL_GPIO_TSF_PROPNAME	"gpio_wl_gpio_tsf" ADAPTER_IDX_STR
+#endif /* OOB_GPIO_TSF_INTR */
 #endif /* BCMDHD_DTS */
 #define GPIO_WL_REG_ON_NAME 	"WL_REG_ON" ADAPTER_IDX_STR
 #define GPIO_WL_HOST_WAKE_NAME	"WL_HOST_WAKE" ADAPTER_IDX_STR
+#ifdef OOB_GPIO_TSF_INTR
+#define GPIO_WL_GPIO_TSF_NAME 	"WL_GPIO_TSF" ADAPTER_IDX_STR
+#endif /* OOB_GPIO_TSF_INTR */
 
 #ifdef CONFIG_DHD_USE_STATIC_BUF
 #if defined(BCMDHD_MDRIVER) && !defined(DHD_STATIC_IN_DRIVER)
@@ -307,6 +314,9 @@ dhd_wlan_init_gpio(wifi_adapter_info_t *adapter)
 	int gpio_wl_host_wake = -1;
 	uint irq_flags = 0;
 #endif /* OOB_INTR */
+#ifdef OOB_GPIO_TSF_INTR
+	int gpio_wl_gpio_tsf = -1;
+#endif /* OOB_GPIO_TSF_INTR */
 
 	/* Please check your schematic and fill right SoC GPIO number which connected to
 	* WL_REG_ON and WL_HOST_WAKE.
@@ -330,6 +340,9 @@ dhd_wlan_init_gpio(wifi_adapter_info_t *adapter)
 #ifdef OOB_INTR
 		gpio_wl_host_wake = of_get_named_gpio(root_node, GPIO_WL_HOST_WAKE_PROPNAME, 0);
 #endif /* OOB_INTR */
+#ifdef OOB_GPIO_TSF_INTR
+		gpio_wl_gpio_tsf = of_get_named_gpio(root_node, GPIO_WL_GPIO_TSF_PROPNAME, 0);
+#endif /* OOB_GPIO_TSF_INTR */
 	} else
 #endif /* BCMDHD_DTS */
 	{
@@ -337,6 +350,9 @@ dhd_wlan_init_gpio(wifi_adapter_info_t *adapter)
 #ifdef OOB_INTR
 		gpio_wl_host_wake = -1;
 #endif /* OOB_INTR */
+#ifdef OOB_GPIO_TSF_INTR
+		gpio_wl_gpio_tsf = -1;
+#endif /* OOB_GPIO_TSF_INTR */
 	}
 
 	adapter->gpio_wl_reg_on = dhd_wlan_request_gpio(gpio_wl_reg_on, FALSE, GPIO_WL_REG_ON_NAME);
@@ -375,6 +391,20 @@ dhd_wlan_init_gpio(wifi_adapter_info_t *adapter)
 		adapter->gpio_wl_host_wake, adapter->irq_num, adapter->intr_flags);
 #endif /* OOB_INTR */
 
+#ifdef OOB_GPIO_TSF_INTR
+	adapter->tsf_irq_num = dhd_wlan_request_gpio(gpio_wl_gpio_tsf, TRUE, GPIO_WL_GPIO_TSF_NAME);
+	if (adapter->tsf_irq_num >= 0)
+		adapter->gpio_wl_gpio_tsf = gpio_wl_gpio_tsf;
+	else {
+		adapter->gpio_wl_gpio_tsf = -1;
+		return -1;
+	}
+	adapter->tsf_intr_flags = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHEDGE | IORESOURCE_IRQ_SHAREABLE;
+	adapter->tsf_intr_flags &= IRQF_TRIGGER_MASK;
+	printf("%s: gpio_wl_gpio_tsf=%d, tsf_irq=%d, irq_flags=0x%x\n", __FUNCTION__,
+		adapter->gpio_wl_gpio_tsf, adapter->tsf_irq_num, adapter->tsf_intr_flags);
+#endif /* OOB_GPIO_TSF_INTR */
+
 	return 0;
 }
 
@@ -387,6 +417,10 @@ dhd_wlan_deinit_gpio(wifi_adapter_info_t *adapter)
 	dhd_wlan_free_gpio(adapter->gpio_wl_host_wake, GPIO_WL_HOST_WAKE_NAME);
 	adapter->gpio_wl_host_wake = -1;
 #endif /* OOB_INTR */
+#ifdef OOB_GPIO_TSF_INTR
+	dhd_wlan_free_gpio(adapter->gpio_wl_gpio_tsf, GPIO_WL_GPIO_TSF_NAME);
+	adapter->gpio_wl_gpio_tsf = -1;
+#endif /* OOB_GPIO_TSF_INTR */
 }
 
 #if defined(BCMDHD_MDRIVER)

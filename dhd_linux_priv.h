@@ -1,7 +1,7 @@
 /*
  * DHD Linux header file - contains private structure definition of the Linux specific layer
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -73,6 +73,12 @@
 #include <bcmmsgbuf.h>
 #include <dhd_flowring.h>
 #endif /* PCIE_FULL_DONGLE */
+
+#if defined(DHD_HWTSTAMP)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30))
+#include <linux/net_tstamp.h>
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)) */
+#endif /* DHD_HWTSTAMP */
 
 #ifdef RX_PKT_POOL
 #define RX_PKTPOOL_RESCHED_DELAY_MS 500u
@@ -497,7 +503,7 @@ typedef struct dhd_info {
 #ifdef ARP_CHECK_SUPPORT
 	/* variable for ARP check functions */
 	bool arp_check_enable; /* Need to enable it in config file */
-	bool arp_trigger_start; /*set it for ARP req trigger */
+	bool arp_trigger_start; /* set it for ARP req trigger */
 	bool arp_check_timer_valid;
 	uint arp_check_interval;
 	uint arp_check_timeout;
@@ -508,6 +514,14 @@ typedef struct dhd_info {
 	/* To send disassoc when ARP resp timeout */
 	struct delayed_work arp_disconnect_work;
 #endif /* ARP_CHECK_SUPPORT */
+#ifdef WL_CFG80211_MONITOR
+	bool mon_tx_mcast;
+	uint32 mon_tx_rspec;
+	bool  mon_tx_rspec_updated;
+#endif /* WL_CFG80211_MONITOR */
+#if defined(DHD_HWTSTAMP) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30))
+	struct hwtstamp_config stmpconf;
+#endif /* defined(DHD_HWTSTAMP) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)) */
 } dhd_info_t;
 
 #define DHD_ARP_CHECK_INTERVAL 1000 /* ms */

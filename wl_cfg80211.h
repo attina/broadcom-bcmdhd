@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -159,9 +159,10 @@ struct wl_ibss;
 #endif // WL_SAE_FT
 #endif /* KERNEL >= 4.17 */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0) && \
+	!defined(WL_STA_SAE_HS_BKPORT) && !defined(WL_AP_SAE_HS_BKPORT)
 #undef WL_SAE_STD_API
-#endif /* LINUX_VERSION_CODE < (5, 11, 0) */
+#endif /* LINUX_VERSION_CODE < (5, 11, 0) && !WL_STA_SAE_HS_BKPORT && !WL_AP_SAE_HS_BKPORT */
 
 #ifndef WL_CLIENT_SAE
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0) && !defined(WL_SAE) && \
@@ -2342,6 +2343,9 @@ struct bcm_cfg80211 {
 	bool disable_roam_event;
 	struct delayed_work pm_enable_work;
 	struct delayed_work recovery_work;
+#ifdef PROP_TXSTATUS_VSDB
+	struct delayed_work wlfc_work;
+#endif /* PROP_TXSTATUS_VSDB */
 	cfg_hang_recovery_t cfg_recovery;
 
 	struct workqueue_struct *event_workq;   /* workqueue for event */
@@ -2410,6 +2414,10 @@ struct bcm_cfg80211 {
 	int custom_scan_home_away_time;
 #endif /* CUSTOMER_SCAN_TIMEOUT_SETTING */
 	uint8 vif_count;	/* Virtual Interface count */
+	uint8 vndev_count;	/* Virtual network device count */
+	uint8 twt_count;
+	uint16 twt_if_bitmap;
+	bool twt_auto_sched;
 #ifdef WBTEXT
 	struct list_head wbtext_bssid_list;
 	void *wbtext_bssid_list_sync;
@@ -2554,6 +2562,7 @@ struct bcm_cfg80211 {
 	struct delayed_work coex_dis_work;
 #endif /* DIS_COEX_FOR_P2P_DISC */
 	u32 authresp_status;
+	int auth_type;
 #ifdef WL_ROAM_WAR
 	struct ether_addr roaming_bssid;
 #endif /* WL_ROAM_WAR */
@@ -3554,6 +3563,14 @@ wl_sup_event_ieee80211_error(u32 reason)
 	cfg80211_port_authorized(ndev, bssid, kflags)
 #endif /* WL_MLO_BKPORT_NEW_PORT_AUTH || WL_AP_PORT_AUTH_BKPORT */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0))
+#define CFG80211_CAC_EVENT(dev, chandef, NL80211_RADAR_CAC_STARTED, KMALLOC_FLAG, link_id) \
+	cfg80211_cac_event(dev, chandef, NL80211_RADAR_CAC_FINISHED, KMALLOC_FLAG, link_id);
+#else
+#define CFG80211_CAC_EVENT(dev, chandef, NL80211_RADAR_CAC_STARTED, KMALLOC_FLAG, link_id) \
+	cfg80211_cac_event(dev, chandef, NL80211_RADAR_CAC_FINISHED, KMALLOC_FLAG);
+#endif /* WL_MLO && (LINUX_VERSION >= VERSION(6,12,0)) */
+
 #define IS_CHSPEC_SCC(chspec1, chspec2) \
 	(wf_chspec_primary20_chspec(chspec1) == wf_chspec_primary20_chspec(chspec2))
 
@@ -3903,6 +3920,16 @@ extern void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver);
 extern int wl_cfgnan_get_stats(struct bcm_cfg80211 *cfg);
 #endif /* WL_NAN */
 
+#ifdef PROP_TXSTATUS_VSDB
+void
+wl_cfg80211_set_wlfc(struct net_device * dev, bool enable);
+void
+wl_wlfc_toggle_check(struct bcm_cfg80211 *cfg);
+#if defined(WL_TWT) || defined(WL_TWT_HAL_IF)
+void
+wl_cfg80211_twt_update(struct net_device * dev, uint16 cmd);
+#endif /* WL_TWT_HAL_IF || WL_TWT */
+#endif /* PROP_TXSTATUS_VSDB */
 extern s32 wl_cfg80211_set_wsec_info(struct net_device *dev, uint32 *data,
 	uint16 data_len, int tag);
 #define WL_CHANNEL_ARRAY_INIT(band_chan_arr)	\
@@ -4130,9 +4157,10 @@ extern void wl_cfg80211_get_bss_sta_info(struct bcm_cfg80211 *cfg, struct net_de
 	struct ether_addr *mac_ea, struct station_info *sinfo);
 #endif /* WL_BSS_STA_INFO */
 bool wl_is_4way_hs_offld_enabled(struct bcm_cfg80211 *cfg, struct net_device *ndev);
-#if defined(WL_SAE_STD_API) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if defined(WL_SAE_STD_API) && \
+	(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || defined(WL_AP_SAE_HS_BKPORT))
 extern int wl_set_sae_pwe(struct net_device *dev, enum nl80211_sae_pwe_mechanism sae_pwe_value);
-#endif /* WL_SAE_STD_API */
+#endif /* WL_SAE_STD_API || WL_AP_SAE_HS_BKPORT */
 extern s32 wl_cfg80211_flush_pmksa(struct wiphy *wiphy, struct net_device *dev);
 #ifdef WL_GCMP
 extern s32 wl_cfg80211_set_wsec_info_algos(struct net_device *dev, uint32 algos, uint32 mask);
@@ -4151,9 +4179,13 @@ extern int wl_cfg80211_set_monitor_channel(struct wiphy *wiphy,
         struct cfg80211_chan_def *chandef);
 #endif /* WL_CFG80211_MONITOR */
 
+void wl_cfg80211_cleanup_connection(struct net_device *net, bool user_enforced);
+
 extern s32 wl_ml_link_add(struct bcm_cfg80211 *cfg,
 		struct net_info *mld_netinfo, wl_mlo_per_link_info_v1_t *link, u8 index);
 extern void wl_clear_ml_link_data_by_mld_netinfo(struct bcm_cfg80211 *cfg,
 		struct net_info *mld_netinfo);
+s32 wl_handle_join(struct bcm_cfg80211 *cfg, struct net_device *dev,
+	wlcfg_assoc_info_t *assoc_info);
 s32 wl_cfg80211_autochannel(struct net_device *dev, char* command, int total_len);
 #endif /* _wl_cfg80211_h_ */

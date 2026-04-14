@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1585,7 +1585,7 @@ wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
 	WL_INFORM_MEM(("[%s] cfg_iftype changed to %d\n", ndev->name, type));
 #ifdef WL_EXT_IAPSTA
 	wl_ext_iapsta_update_iftype(ndev, wl_iftype);
-#endif
+#endif /* WL_EXT_IAPSTA */
 
 fail:
 	if (err) {
@@ -2229,6 +2229,7 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 #if defined(SUPPORT_AP_INIT_BWCONF)
 	u32 configured_bw;
 #endif /* SUPPORT_AP_INIT_BWCONF */
+	u16 center_freq = chan->center_freq;
 	struct net_info *netinfo = NULL;
 	u32 chan_info;
 
@@ -2271,7 +2272,25 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0) */
 
 	dev = ndev_to_wlc_ndev(dev, cfg);
-	chspec = wl_freq_to_chanspec(chan->center_freq);
+#ifdef WL_EXT_IAPSTA
+	if (dev->ieee80211_ptr->iftype == NL80211_IFTYPE_AP ||
+			dev->ieee80211_ptr->iftype == NL80211_IFTYPE_P2P_GO) {
+		u16 wl_iftype = 0;
+		u16 wl_mode = 0;
+
+		chspec = wl_freq_to_chanspec(chan->center_freq);
+		if (cfg80211_to_wl_iftype(dev->ieee80211_ptr->iftype,
+				&wl_iftype, &wl_mode) < 0) {
+			WL_ERR(("Unknown interface type:0x%x\n", dev->ieee80211_ptr->iftype));
+			return -EINVAL;
+		}
+		wl_ext_iapsta_update_iftype(dev, wl_iftype);
+		chspec = wl_ext_iapsta_update_channel(dev, chspec);
+		center_freq = wl_channel_to_frequency(wf_chspec_primary20_chan(chspec),
+			CHSPEC_BAND(chspec));
+	} else
+#endif /* WL_EXT_IAPSTA */
+	chspec = wl_freq_to_chanspec(center_freq);
 	WL_MSG(dev->name, "netdev_ifidx(%d) target channel(%s-%d %sMHz)\n",
 		dev->ifindex, CHSPEC2BANDSTR(chspec),
 		CHSPEC_CHANNEL(chspec), WLCWIDTH2STR(hostapd_width));
@@ -2962,7 +2981,7 @@ wl_validate_wpa2ie(struct net_device *dev, const bcm_tlv_t *wpa2ie, s32 bssidx)
 				break;
 #endif /* WL_SAE || WL_CLIENT_SAE || WL_SAE_STD_API */
 #endif /* MFP */
-#if defined(WL_OWE) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0))
+#if defined(WL_OWE) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0) || defined(WL_OWE_OFFLD_BKPORT))
 			case RSN_AKM_OWE:
 				wpa_auth |= WPA3_AUTH_OWE;
 				break;
@@ -3728,13 +3747,13 @@ wl_cfg80211_bcn_validate_sec(
 			/* Set SAE passphrase */
 			if (sec->fw_wpa_auth & (WPA3_AUTH_SAE_PSK | WPA3_AUTH_SAE_EXT_PSK)) {
 				wl_set_ap_passphrase(dev, crypto, dev_role);
-#if defined(WL_SAE_STD_API) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if defined(WL_AP_SAE_HS_BKPORT) || LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 				err = wl_set_sae_pwe(dev, crypto->sae_pwe);
 				if (unlikely(err)) {
 					WL_ERR(("Unable to set sae_pwe\n"));
 					return err;
 				}
-#endif /* WL_SAE_STD_API */
+#endif /* WL_AP_SAE_HS_BKPORT */
 			}
 		}
 #endif /* WL_SAE || WL_SAE_STD_API */
@@ -3808,13 +3827,13 @@ wl_cfg80211_bcn_validate_sec(
 			/* Set SAE passphrase */
 			if (sec->fw_wpa_auth & (WPA3_AUTH_SAE_PSK | WPA3_AUTH_SAE_EXT_PSK)) {
 				wl_set_ap_passphrase(dev, crypto, dev_role);
-#if defined(WL_SAE_STD_API) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if defined(WL_AP_SAE_HS_BKPORT) || LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 				err = wl_set_sae_pwe(dev, crypto->sae_pwe);
 				if (unlikely(err)) {
 					WL_ERR(("Unable to set sae_pwe\n"));
 					return err;
 				}
-#endif /* WL_SAE_STD_API */
+#endif /* WL_AP_SAE_HS_BKPORT */
 			}
 		}
 #endif /* WL_SAE || WL_SAE_STD_API */
@@ -5230,6 +5249,9 @@ wl_cfg80211_start_ap(
 		}
 	}
 #endif /* SUPPORT_AP_RADIO_PWRSAVE */
+#ifdef WL_EXT_IAPSTA
+		wl_ext_in4way_sync(dev, 0, WL_EXT_STATUS_AP_ENABLING, NULL);
+#endif /* WL_EXT_IAPSTA */
 fail:
 	if (err) {
 		WL_ERR(("ADD/SET beacon failed\n"));
@@ -5240,6 +5262,9 @@ fail:
 		wl_cfg80211_stop_ap(wiphy, dev);
 #endif /* LINUX_VERSION_CODE > KERNEL_VERSION(5, 19, 2) || WL_MLO_BKPORT */
 		if (dev_role == NL80211_IFTYPE_AP) {
+#ifdef WL_EXT_IAPSTA
+		if (!wl_ext_iapsta_iftype_enabled(dev, WL_IF_TYPE_AP)) {
+#endif /* WL_EXT_IAPSTA */
 #ifdef BCMDONGLEHOST
 			/* If there are no other APs active, clear the AP mode */
 			if (wl_cfgvif_get_iftype_count(cfg, WL_IF_TYPE_AP) == 0) {
@@ -5249,6 +5274,9 @@ fail:
 			wl_cfg80211_set_frameburst(cfg, TRUE);
 #endif /* DISABLE_WL_FRAMEBURST_SOFTAP */
 #endif /* BCMDONGLEHOST */
+#ifdef WL_EXT_IAPSTA
+		}
+#endif /* WL_EXT_IAPSTA */
 		}
 #ifdef BCMDONGLEHOST
 		/* Enable packet filter */
@@ -5342,6 +5370,9 @@ wl_cfg80211_stop_ap(
 		err = -EINVAL;
 		goto exit;
 	}
+#ifdef WL_EXT_IAPSTA
+	wl_ext_in4way_sync(dev, 0, WL_EXT_STATUS_AP_DISABLING, NULL);
+#endif /* WL_EXT_IAPSTA */
 
 	/* Free up resources */
 	wl_cfg80211_cleanup_if(dev);
@@ -5467,11 +5498,16 @@ exit:
 
 #ifdef BCMDONGLEHOST
 	if (dev_role == NL80211_IFTYPE_AP) {
+#ifdef WL_EXT_IAPSTA
+		if (!wl_ext_iapsta_iftype_enabled(dev, WL_IF_TYPE_AP)) {
+#endif /* WL_EXT_IAPSTA */
 		/* If there are no other APs active, clear the AP mode */
 		if (wl_cfgvif_get_iftype_count(cfg, WL_IF_TYPE_AP) == 0) {
 			dhd->op_mode &= ~DHD_FLAG_HOSTAP_MODE;
 		}
-
+#ifdef WL_EXT_IAPSTA
+		}
+#endif /* WL_EXT_IAPSTA */
 	}
 #endif /* BCMDONGLEHOST */
 	return err;
@@ -5727,8 +5763,14 @@ fail:
 		WL_ERR(("ADD/SET beacon failed\n"));
 #ifdef BCMDONGLEHOST
 		if (dev_role == NL80211_IFTYPE_AP) {
+#ifdef WL_EXT_IAPSTA
+		if (!wl_ext_iapsta_iftype_enabled(dev, WL_IF_TYPE_AP)) {
+#endif /* WL_EXT_IAPSTA */
 			/* clear the AP mode */
 			dhd->op_mode &= ~DHD_FLAG_HOSTAP_MODE;
+#ifdef WL_EXT_IAPSTA
+		}
+#endif /* WL_EXT_IAPSTA */
 		}
 #endif /* BCMDONGLEHOST */
 	}
@@ -5785,8 +5827,14 @@ wl_cfg80211_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 
 #ifdef BCMDONGLEHOST
 	if (wdev->iftype == NL80211_IFTYPE_AP) {
+#ifdef WL_EXT_IAPSTA
+		if (!wl_ext_iapsta_iftype_enabled(dev, WL_IF_TYPE_AP)) {
+#endif /* WL_EXT_IAPSTA */
 		/* clear the AP mode */
 		dhd->op_mode &= ~DHD_FLAG_HOSTAP_MODE;
+#ifdef WL_EXT_IAPSTA
+		}
+#endif /* WL_EXT_IAPSTA */
 	}
 #endif /* BCMDONGLEHOST */
 
@@ -6228,9 +6276,13 @@ exit:
 
 #if defined(DHD_DFS_MASTER) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
 void
-wl_notify_cac_event(struct net_device *dev)
+wl_notify_cac_event(struct net_device *dev, const wl_event_msg_t *e)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION (4, 17, 0))
+#if defined(WL_MLO) && (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0))
+	wl_mlo_link_t *linkinfo = NULL;
+#endif /* WL_MLO && (LINUX_VERSION >= VERSION(6,12,0)) */
+	uint8 link_id = 0;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	struct wireless_dev *wdev = ndev_to_wdev(dev);
 	struct wiphy *wiphy = bcmcfg_to_wiphy(cfg);
@@ -6257,11 +6309,20 @@ wl_notify_cac_event(struct net_device *dev)
 #else
 			wdev->chandef.chan = chandef.chan;
 #endif /* KERNEL_VERSION(5, 19, 2) || defined(CFG80211_BKPORT_MLO) */
+#if defined(WL_MLO) && (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0))
+			linkinfo = wl_cfg80211_get_ml_link_detail(cfg, e->ifidx, e->bsscfgidx);
+			if (linkinfo) {
+				link_id = linkinfo->link_id;
+			}
+			wdev->links[link_id].cac_start_time = jiffies - msecs_to_jiffies(IEEE80211_DFS_MIN_CAC_TIME_MS);
+			wdev->links[link_id].cac_time_ms = IEEE80211_DFS_MIN_CAC_TIME_MS;
+#else
 			wdev->cac_start_time = jiffies - msecs_to_jiffies(IEEE80211_DFS_MIN_CAC_TIME_MS);
 			wdev->cac_time_ms = IEEE80211_DFS_MIN_CAC_TIME_MS;
+#endif /* WL_MLO && (LINUX_VERSION >= VERSION(6,12,0)) */
 			WL_MSG(dev->name, "send fake CAC event\n");
-			cfg80211_cac_event(dev, &chandef, NL80211_RADAR_CAC_STARTED, KMALLOC_FLAG);
-			cfg80211_cac_event(dev, &chandef, NL80211_RADAR_CAC_FINISHED, KMALLOC_FLAG);
+			CFG80211_CAC_EVENT(dev, &chandef, NL80211_RADAR_CAC_STARTED, KMALLOC_FLAG, link_id);
+			CFG80211_CAC_EVENT(dev, &chandef, NL80211_RADAR_CAC_FINISHED, KMALLOC_FLAG, link_id);
 		}
 	}
 #endif
@@ -6315,6 +6376,9 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		wl_add_remove_eventmsg(ndev, WLC_E_PROBREQ_MSG, false);
 		WL_MSG(ndev->name, "AP mode link down !! \n");
 		complete(&cfg->iface_disable);
+#ifdef WL_EXT_IAPSTA
+		wl_ext_in4way_sync(ndev, 0, WL_EXT_STATUS_AP_DISABLED, NULL);
+#endif /* WL_EXT_IAPSTA */
 		goto exit;
 	}
 
@@ -6347,8 +6411,11 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 				WL_INFORM_MEM(("cancelled ap_work\n"));
 			}
 #if defined(DHD_DFS_MASTER) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
-			wl_notify_cac_event(ndev);
+			wl_notify_cac_event(ndev, e);
 #endif /* DHD_DFS_MASTER && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0) */
+#ifdef WL_EXT_IAPSTA
+			wl_ext_in4way_sync(ndev, 0, WL_EXT_STATUS_AP_ENABLED, NULL);
+#endif /* WL_EXT_IAPSTA */
 			goto exit;
 		}
 	}
@@ -6407,6 +6474,10 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		sinfo.assoc_req_ies_len = len;
 		WL_MSG(ndev->name, "new sta event for "MACDBG "\n",
 			MAC2STRDBG(e->addr.octet));
+#ifdef WL_EXT_IAPSTA
+		wl_ext_in4way_sync(ndev, AP_WAIT_STA_RECONNECT,
+			WL_EXT_STATUS_STA_CONNECTED, (void *)&e->addr);
+#endif /* WL_EXT_IAPSTA */
 		cfg80211_new_sta(ndev, e->addr.octet, &sinfo, GFP_ATOMIC);
 #ifdef WL_WPS_SYNC
 		wl_wps_session_update(ndev, WPS_STATE_LINKUP, e->addr.octet);
@@ -6424,6 +6495,10 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 
 		WL_MSG_RLMT(ndev->name, &e->addr, ETHER_ADDR_LEN,
 			"del sta event for "MACDBG "\n", MAC2STRDBG(e->addr.octet));
+#ifdef WL_EXT_IAPSTA
+		wl_ext_in4way_sync(ndev, AP_WAIT_STA_RECONNECT,
+			WL_EXT_STATUS_STA_DISCONNECTED, (void *)&e->addr);
+#endif /* WL_EXT_IAPSTA */
 		cfg80211_del_sta(ndev, e->addr.octet, GFP_ATOMIC);
 #ifdef WL_WPS_SYNC
 		wl_wps_session_update(ndev, WPS_STATE_LINKDOWN, e->addr.octet);
@@ -7049,7 +7124,7 @@ wl_cfg80211_set_monitor_channel(struct wiphy *wiphy,
 #endif /* WL_CFG80211_MONITOR */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
-static int wl_chspec_chandef(struct net_device *dev, chanspec_t chanspec,
+int wl_chspec_chandef(struct net_device *dev, chanspec_t chanspec,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
 	struct cfg80211_chan_def *chandef,
 #else
@@ -7214,6 +7289,9 @@ wl_cfg80211_ch_switch_notify(struct net_device *dev, uint16 chanspec,
 	cfg80211_ch_switch_notify(dev, chaninfo.freq, chaninfo.chan_type);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 8, 0)) */
 
+#ifdef WL_EXT_IAPSTA
+	wl_ext_fw_reinit_incsa(dev);
+#endif /* WL_EXT_IAPSTA */
 	return;
 }
 #endif /* LINUX_VERSION_CODE >= (3, 5, 0) */
@@ -7248,6 +7326,9 @@ wl_ap_channel_ind(struct bcm_cfg80211 *cfg, struct net_device *ndev, chanspec_t 
 #endif /* WL_CELLULAR_CHAN_AVOID */
 
 	}
+#ifdef WL_EXT_IAPSTA
+	wl_ext_iapsta_csa_event(ndev);
+#endif /* WL_EXT_IAPSTA */
 }
 
 s32

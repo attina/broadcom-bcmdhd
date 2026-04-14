@@ -2,7 +2,7 @@
  * Definitions for API from sdio common code (bcmsdh) to individual
  * host controller drivers.
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -47,6 +47,7 @@
 #if defined(BT_OVER_SDIO)
 #include <linux/mmc/sdio_func.h>
 #endif /* defined (BT_OVER_SDIO) */
+#include <dhd_linux.h>
 
 /*
  * The following were:
@@ -208,7 +209,7 @@ extern void sdioh_glom_post(sdioh_info_t *sd, uint8 *frame, void *pkt, uint len)
 extern void sdioh_glom_clear(sdioh_info_t *sd);
 #endif /* BCMSDIOH_TXGLOM */
 
-extern void* bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint bus_type,
+extern void* bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, wifi_adapter_info_t *adapter_info, uint bus_type,
 	uint bus_num, uint slot_num);
 extern int bcmsdh_remove(bcmsdh_info_t *bcmsdh);
 

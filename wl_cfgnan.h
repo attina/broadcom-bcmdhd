@@ -1,7 +1,7 @@
 /*
  * Neighbor Awareness Networking
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -274,7 +274,8 @@
 #define NMI_IFNAME              CUSTOM_NMI_IFNAME
 #endif /* !CUSTOM_NMI_IFNAME */
 
-#define IS_NDI_IFACE(ifname) strstr(ifname, "aware_data")
+#define IS_NDI_IFACE(ifname) (strstr(ifname, "aware_data") || \
+	(strstr(ifname, "aware") && !strstr(ifname, "aware_nmi")))
 #define IS_NMI_IFACE(ifname) strstr(ifname, NMI_IFNAME)
 
 #define NAN_GEOFENCE_RTT_DEFAULT_INTVL	512u
@@ -715,6 +716,7 @@ typedef struct nan_event_data {
 	nan_str_data_t npk;		/* NPK/PMK of the PAIRING SA */
 	nan_str_data_t cookie;		/* Boostrapping cookie info */
 	nan_str_data_t npba_info;	/* NPBA attr information */
+	uint16	chanspec;
 } nan_event_data_t;
 
 /*

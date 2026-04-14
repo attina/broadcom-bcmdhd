@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD),
  * Linux-specific network interface for receive(rx) path
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -723,7 +723,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		}
 #endif
 
-#ifdef PCIE_FULL_DONGLE
+#if defined(PCIE_FULL_DONGLE) || defined(SYNA_FW_PKT_FWD_DISABLED)
 		if ((DHD_IF_ROLE_AP(dhdp, ifidx) || DHD_IF_ROLE_P2PGO(dhdp, ifidx)) &&
 			(!ifp->ap_isolate)) {
 			eh = (struct ether_header *)PKTDATA(dhdp->osh, pktbuf);
@@ -757,7 +757,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 				}
 			}
 		}
-#endif /* PCIE_FULL_DONGLE */
+#endif /* PCIE_FULL_DONGLE || SYNA_FW_PKT_FWD_DISABLED */
 #endif /* BCM_ROUTER_DHD */
 #ifdef DHD_POST_EAPOL_M1_AFTER_ROAM_EVT
 		if (IS_STA_IFACE(ndev_to_wdev(ifp->net)) &&
@@ -793,6 +793,9 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 				OSL_ATOMIC_SET(dhdp->osh, &ifp->m4state, M3_RXED);
 			}
 #endif /* DHD_4WAYM4_FAIL_DISCONNECT */
+#ifdef EAPOL_RESEND
+			wl_ext_release_eapol_txpkt(dhdp, ifidx, TRUE);
+#endif /* EAPOL_RESEND */
 		}
 		dhd_handle_pktdata(dhdp, ifidx, skb, dump_data, FALSE,
 			len, NULL, NULL, NULL, FALSE, pkt_wake, TRUE);
@@ -810,6 +813,12 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		}
 #endif /* DHD_WAKE_STATUS && DHD_WAKEPKT_DUMP */
 
+#ifdef EAP_FAILURE_REASSOC
+		if (wl_ext_eap_fail_reassoc(dhdp, ifidx, dump_data, len)) {
+			PKTFREE(dhdp->osh, pktbuf, FALSE);
+			continue;
+		}
+#endif /* EAP_FAILURE_REASSOC */
 		skb->protocol = eth_type_trans(skb, skb->dev);
 
 		if (skb->pkt_type == PACKET_MULTICAST) {

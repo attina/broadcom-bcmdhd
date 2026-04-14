@@ -1,7 +1,7 @@
 /*
  * Linux roam cache
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -175,7 +175,14 @@ void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 		}
 	}
 
-	WL_DBG(("%d AP, %d cache item(s), err=%d\n", n_roam_cache, channel_list.n, error));
+	WL_SCAN(("%d AP, %d cache item(s), err=%d\n", n_roam_cache, channel_list.n, error));
+}
+
+void update_roam_cache2(struct net_device *dev)
+{
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	update_roam_cache(cfg, ioctl_version);
 }
 
 void set_roam_band(int band)
@@ -252,6 +259,14 @@ add_roam_cache(struct bcm_cfg80211 *cfg, wl_bss_info_v109_t *bi)
 #endif /* WES_SUPPORT */
 
 	add_roam_cache_list(bi->SSID, bi->SSID_len, bi->chanspec);
+}
+
+void
+add_roam_cache2(struct net_device *dev, wl_bss_info_v109_t *bi)
+{
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	add_roam_cache(cfg, bi);
 }
 
 static bool is_duplicated_channel(const chanspec_t *channels, int n_channels, chanspec_t new)

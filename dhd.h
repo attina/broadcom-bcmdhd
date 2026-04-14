@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -23,7 +23,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1382,6 +1382,7 @@ typedef struct dhd_pub {
 	uint maxctl;		/* Max size rxctl request from proto to bus */
 	uint rxsz;		/* Rx buffer size bus module should use */
 	uint8 wme_dp;	/* wme discard priority */
+	bool wme_sta_vi_be_equal;		/* TRUE if FW reports STA BE/VI EDCF are equal */
 #ifdef DNGL_AXI_ERROR_LOGGING
 	uint32 axierror_logbuf_addr;
 	bool axi_error;
@@ -1531,6 +1532,7 @@ typedef struct dhd_pub {
 	#error "wlfc thread not enabled"
 #endif /* __linux__ */
 #endif /* DHD_WLFC_THREAD */
+	uint32 simutx_limit;
 #endif /* PROP_TXSTATUS */
 #ifdef PNO_SUPPORT
 	void *pno_state;
@@ -2168,8 +2170,16 @@ typedef struct dhd_pub {
 #if defined(DHD_SI_WD_RESET)
 	bool si_wd;
 #endif /* DHD_SI_WD_RESET */
+#ifdef PROP_TXSTATUS_VSDB
+	int proptx_force;
+#endif /* PROP_TXSTATUS_VSDB */
 	uint32 curr_rxcpl;
 	bool low_latency;
+#if defined(OOB_GPIO_TSF_INTR) || defined(OOB_TSF_INTR)
+	uint32 tsf_intr_state;
+	uint64 tsf_host_ns;
+	uint64 tsf_wlan_us;
+#endif /* OOB_GPIO_TSF_INTR || OOB_TSF_INTR */
 
 	struct dhd_conf *conf;	/* Bus module handle */
 	void *adapter;			/* adapter information, interrupt, fw path etc. */
@@ -2847,11 +2857,11 @@ extern int dhd_dev_set_lazy_roam_bssid_pref(struct net_device *dev,
        wl_bssid_pref_cfg_t *bssid_pref, uint32 flush);
 #endif /* GSCAN_SUPPORT */
 #if defined(GSCAN_SUPPORT) || defined(ROAMEXP_SUPPORT)
-extern int dhd_dev_set_blacklist_bssid(struct net_device *dev, maclist_t *blacklist,
-    uint32 len, uint32 flush);
 extern int dhd_dev_set_whitelist_ssid(struct net_device *dev, wl_ssid_whitelist_t *whitelist,
     uint32 len, uint32 flush);
 #endif /* GSCAN_SUPPORT || ROAMEXP_SUPPORT */
+extern int dhd_dev_set_blacklist_bssid(struct net_device *dev, maclist_t *blacklist,
+    uint32 len, uint32 flush);
 
 /* OS independent layer functions */
 extern void dhd_os_dhdiovar_lock(dhd_pub_t *pub);
@@ -5397,6 +5407,10 @@ int dhd_reinit_logtrace_process(void *dhd_info);
 extern void *dhd_validate_packet_address(dhd_pub_t *dhd, void *pkt);
 extern void dhd_enqueue_inv_address_queue(struct dhd_pub *dhdp, void *pkt);
 #endif /* DHD_VALIDATE_PKT_ADDRESS */
+
+#ifdef DHD_HWTSTAMP
+extern int dhd_hwtstamp_txtype(dhd_pub_t *dhdp);
+#endif /* DHD_HWTSTAMP */
 
 extern void dhd_wd_interval_set(dhd_pub_t *dhdp, uint wd_interval);
 extern int pattern_atoh_len(char *src, char *dst, int len);

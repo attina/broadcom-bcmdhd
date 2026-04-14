@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver scan related code
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -567,6 +567,10 @@ wl_inform_bss(struct bcm_cfg80211 *cfg)
 	s32 i;
 	struct net_device *ndev = wl_get_scan_ndev(cfg);
 
+#ifdef WL_EXT_IAPSTA
+	if (ndev)
+		wl_ext_in4way_sync(ndev, 0, WL_EXT_STATUS_SCAN_COMPLETE, NULL);
+#endif /* WL_EXT_IAPSTA */
 	bss_list = cfg->bss_list;
 	WL_SCAN(("scanned AP count (%d)\n", bss_list->count));
 #ifdef ESCAN_CHANNEL_CACHE
@@ -2923,6 +2927,20 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		}
 	}
 
+#ifdef WL_EXT_IAPSTA
+	mutex_unlock(&cfg->scan_sync);
+	err = wl_ext_in4way_sync(ndev, STA_FAKE_SCAN_IN_CONNECT, WL_EXT_STATUS_SCANNING, NULL);
+	if (err) {
+		wl_event_msg_t msg;
+		mutex_lock(&cfg->scan_sync);
+		bzero(&msg, sizeof(wl_event_msg_t));
+		msg.event_type = hton32(WLC_E_ESCAN_RESULT);
+		msg.status = hton32(WLC_E_STATUS_SUCCESS);
+		wl_cfg80211_event(ndev, &msg, NULL);
+		goto scan_success;
+	}
+	mutex_lock(&cfg->scan_sync);
+#endif /* WL_EXT_IAPSTA */
 	err = wl_do_escan(cfg, wiphy, ndev, request);
 	if (likely(!err)) {
 		goto scan_success;
@@ -3010,6 +3028,14 @@ wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 			 return -ENODEV;
 		}
 	}
+#ifdef WL_EXT_IAPSTA
+	err = wl_ext_in4way_sync(ndev_to_wlc_ndev(ndev, cfg), STA_NO_SCAN_IN4WAY,
+		WL_EXT_STATUS_SCAN, NULL);
+	if (err) {
+		WL_SCAN(("scan suppressed %d\n", err));
+		return err;
+	}
+#endif /* WL_EXT_IAPSTA */
 
 #ifdef WL_NAN
 	if (cfg->nancfg->pairing_in_prog) {
@@ -4573,7 +4599,7 @@ static void wl_scan_timeout(void *data)
 		dhd_bus_mem_dump(dhdp);
 #else
 		if (dhd_schedule_socram_dump(dhdp)) {
-			WL_ERR(("%s: socram dump failed\n", __FUNCTION__));
+			WL_ERR(("socram dump failed\n"));
 		}
 #endif /* BCMPCIE */
 	}
@@ -5490,12 +5516,14 @@ wl_get_assoc_channels(struct bcm_cfg80211 *cfg,
 				}
 			}
 #endif /* !DISABLE_FW_NW_SEL_FOR_6G && WL_6G_BAND */
-			/* Use RCC channels as part of join params */
-			info->chan_cnt = rcc_chan_cnt;
-			if (memcpy_s(info->chanspecs, sizeof(info->chanspecs), chanspecs,
-					(sizeof(chanspec_t) * rcc_chan_cnt)) != BCME_OK) {
-				WL_ERR(("chanspec copy failed!\n"));
-				return -EINVAL;
+			if (!info->bssid_hint || info->chan_cnt != 1) {
+				/* Use RCC channels as part of join params */
+				info->chan_cnt = rcc_chan_cnt;
+				if (memcpy_s(info->chanspecs, sizeof(info->chanspecs), chanspecs,
+						(sizeof(chanspec_t) * rcc_chan_cnt)) != BCME_OK) {
+					WL_ERR(("chanspec copy failed!\n"));
+					return -EINVAL;
+				}
 			}
 		}
 	}
@@ -5625,11 +5653,10 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 	unsigned int chspec_band, chspec_ctl_freq, chspec_center_ch, chspec_bw, chspec_sb;
 
 	if ((!pResult) || (!pParameter)) {
-		WL_ERR(("%s: parameter invalid\n", __FUNCTION__));
+		WL_ERR(("parameter invalid\n"));
 		return BCME_BADARG;
 	} else if (!wf_chspec_valid(ch_chosen)) {
-		WL_ERR(("%s: ch_chosen=0x%X invalid\n",
-		        __FUNCTION__, ch_chosen));
+		WL_ERR(("ch_chosen=0x%X invalid\n", ch_chosen));
 		return BCME_BADARG;
 	}
 
@@ -5639,8 +5666,7 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 	chspec_band = CHSPEC_BAND((chanspec_t)ch_chosen);
 	chspec_bw = CHSPEC_BW(ch_chosen);
 	chspec_sb = CHSPEC_CTL_SB(ch_chosen);
-	WL_TRACE(("%s: ctl_freq=%d, center_ch=%d, band=0x%X, bw=0x%X, sb=0x%X\n",
-	          __FUNCTION__,
+	WL_TRACE(("ctl_freq=%d, center_ch=%d, band=0x%X, bw=0x%X, sb=0x%X\n",
 	          chspec_ctl_freq,  chspec_center_ch, chspec_band, chspec_bw, chspec_sb));
 
 	(void)memset_s(pResult, sizeof(acs_selected_channels_t),
@@ -5657,7 +5683,7 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 			pResult->hw_mode = HOSTAPD_MODE_IEEE80211A;
 			break;
 	}
-	WL_TRACE(("%s: hw_mode=%d\n", __FUNCTION__, pResult->hw_mode));
+	WL_TRACE(("hw_mode=%d\n", pResult->hw_mode));
 
 	/* ch_width and others */
 	switch (chspec_bw) {
@@ -5675,12 +5701,12 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 				pResult->sec_freq = chspec_ctl_freq + SEC_FREQ_HT40_OFFSET;
 				break;
 			}
-			WL_TRACE(("%s: HT40 ok\n", __FUNCTION__));
+			WL_TRACE(("HT40 ok\n"));
 		} else {
 			pResult->ch_width = 20;
 			pResult->pri_freq = chspec_ctl_freq;
 			pResult->sec_freq = 0;
-			WL_TRACE(("%s: HT40 to HT20\n", __FUNCTION__));
+			WL_TRACE(("HT40 to HT20\n"));
 		}
 		break;
 	case WL_CHANSPEC_BW_80:
@@ -5702,7 +5728,7 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 				pResult->sec_freq = chspec_ctl_freq - SEC_FREQ_HT40_OFFSET;
 				break;
 			}
-			WL_TRACE(("%s: HT80 ok\n", __FUNCTION__));
+			WL_TRACE(("HT80 ok\n"));
 		} else if (pParameter->ht40_enabled) {
 			pResult->ch_width = 40;
 			switch (chspec_sb) {
@@ -5718,12 +5744,12 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 				pResult->sec_freq = chspec_ctl_freq - SEC_FREQ_HT40_OFFSET;
 				break;
 			}
-			WL_TRACE(("%s: HT80 to HT40\n", __FUNCTION__));
+			WL_TRACE(("HT80 to HT40\n"));
 		} else {
 			pResult->ch_width = 20;
 			pResult->pri_freq = chspec_ctl_freq;
 			pResult->sec_freq = 0;
-			WL_TRACE(("%s: HT80 to HT20\n", __FUNCTION__));
+			WL_TRACE(("HT80 to HT20\n"));
 		}
 		break;
 	case WL_CHANSPEC_BW_160:
@@ -5755,7 +5781,7 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 					wf_chspec_secondary160_channel((chanspec_t)ch_chosen);
 				break;
 			}
-			WL_TRACE(("%s: HT160 ok\n", __FUNCTION__));
+			WL_TRACE(("HT160 ok\n"));
 		} else if (pParameter->ht40_enabled) {
 			pResult->ch_width = 40;
 			switch (chspec_sb) {
@@ -5775,12 +5801,12 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 				pResult->sec_freq = chspec_ctl_freq - SEC_FREQ_HT40_OFFSET;
 				break;
 			}
-			WL_TRACE(("%s: HT160 to HT40\n", __FUNCTION__));
+			WL_TRACE(("HT160 to HT40\n"));
 		} else {
 			pResult->ch_width = 20;
 			pResult->pri_freq = chspec_ctl_freq;
 			pResult->sec_freq = 0;
-			WL_TRACE(("%s: HT160 to HT20\n", __FUNCTION__));
+			WL_TRACE(("HT160 to HT20\n"));
 		}
 		break;
 	case WL_CHANSPEC_BW_20:
@@ -5789,12 +5815,12 @@ static int wl_cfgscan_acs_parse_result(acs_selected_channels_t *pResult,
 			pResult->ch_width = 20;
 			pResult->pri_freq = chspec_ctl_freq;
 		}
-		WL_TRACE(("%s: HT20 ok\n", __FUNCTION__));
+		WL_TRACE(("HT20 ok\n"));
 		break;
 	}
 
-	WL_TRACE(("%s: result: pri_freq=%d, sec_freq=%d, vht_seg0=%d, vht_seg1=%d,"
-	          " ch_width=%d, hw_mode=%d\n", __FUNCTION__,
+	WL_TRACE(("result: pri_freq=%d, sec_freq=%d, vht_seg0=%d, vht_seg1=%d,"
+	          " ch_width=%d, hw_mode=%d\n",
 	          pResult->pri_freq, pResult->sec_freq,
 	          pResult->vht_seg0_center_ch, pResult->vht_seg1_center_ch,
 	          pResult->ch_width, pResult->hw_mode));
@@ -5810,7 +5836,7 @@ static int wl_cfgscan_acs_parse_parameter_save(int *pLen, uint32 *pList, chanspe
 
 	do {
 		if ((!pLen) || (!pList)) {
-			WL_ERR(("%s: parameter invalid\n", __FUNCTION__));
+			WL_ERR(("parameter invalid\n"));
 			ret = BCME_BADARG;
 			break;
 		} else {
@@ -5818,7 +5844,7 @@ static int wl_cfgscan_acs_parse_parameter_save(int *pLen, uint32 *pList, chanspe
 		}
 
 		if (!wf_chspec_valid(chspec)) {
-			WL_TRACE(("%s: chanspec=0x%X invalid\n", __FUNCTION__, chspec));
+			WL_TRACE(("chanspec=0x%X invalid\n", chspec));
 			ret = BCME_BADARG;
 			break;
 		}
@@ -5832,9 +5858,9 @@ static int wl_cfgscan_acs_parse_parameter_save(int *pLen, uint32 *pList, chanspe
 		if (i == qty) {
 			pList[qty++] = chspec;
 			*pLen = qty;
-			WL_TRACE(("%s: fill list[%d] = 0x%X\n", __FUNCTION__, qty, chspec));
+			WL_TRACE(("fill list[%d] = 0x%X\n", qty, chspec));
 		} else {
-			WL_TRACE(("%s: duplicate with [idx]=[%d]=0x%X\n", __FUNCTION__, i, chspec));
+			WL_TRACE(("duplicate with [idx]=[%d]=0x%X\n", i, chspec));
 			break;
 		}
 	} while (0);
@@ -5852,7 +5878,7 @@ static int wl_cfgscan_acs_parse_parameter(struct bcm_cfg80211 *cfg,
 
 	do {
 		if ((!pLen) || (!pList) || (!pParameter)) {
-			WL_ERR(("%s: parameter invalid\n", __FUNCTION__));
+			WL_ERR(("parameter invalid\n"));
 			ret = BCME_BADARG;
 			break;
 		}
@@ -5947,7 +5973,7 @@ static int wl_cfgscan_acs_parse_parameter(struct bcm_cfg80211 *cfg,
 		}
 
 		*pLen = qty;
-		WL_TRACE(("%s: current quantity=%d\n", __FUNCTION__, qty));
+		WL_TRACE(("current quantity=%d\n", qty));
 	} while (0);
 
 	return ret;
@@ -5968,7 +5994,7 @@ static void wl_cfgscan_acs_result_event(struct work_struct *work)
 
 	do {
 		if (!delay_work) {
-			WL_ERR(("%s: work parameter invalid\n", __FUNCTION__));
+			WL_ERR(("work parameter invalid\n"));
 			ret = BCME_BADARG;
 			break;
 		} else {
@@ -5978,7 +6004,7 @@ static void wl_cfgscan_acs_result_event(struct work_struct *work)
 		}
 
 		if ((!ndev) || (!(ndev->ieee80211_ptr)) || (!(ndev->ieee80211_ptr->wiphy))) {
-			WL_ERR(("%s: parameter invalid\n", __FUNCTION__));
+			WL_ERR(("parameter invalid\n"));
 			ret = BCME_BADARG;
 			break;
 		}
@@ -5986,15 +6012,15 @@ static void wl_cfgscan_acs_result_event(struct work_struct *work)
 
 		/* construct result */
 		if (wl_cfgscan_acs_parse_result(&result, ch_chosen, pParameter) < 0) {
-			WL_ERR(("%s: fail to convert the result\n", __FUNCTION__));
+			WL_ERR(("fail to convert the result\n"));
 			ret = BCME_BADARG;
 			break;
 		}
 
 		len = 200;
 		kflags = in_atomic()? GFP_ATOMIC : GFP_KERNEL;
-		WL_TRACE(("%s: idx=%d, wiphy->n_vendor_events=%d\n",
-		          __FUNCTION__, BRCM_VENDOR_EVENT_ACS, wiphy->n_vendor_events));
+		WL_TRACE(("idx=%d, wiphy->n_vendor_events=%d\n",
+		          BRCM_VENDOR_EVENT_ACS, wiphy->n_vendor_events));
 		/* Alloc the SKB for vendor_event */
 #if (defined(CONFIG_ARCH_MSM) && defined(SUPPORT_WDEV_CFG80211_VENDOR_EVENT_ALLOC)) || \
 	LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) || defined(USE_BACKPORT_4)
@@ -6004,7 +6030,7 @@ static void wl_cfgscan_acs_result_event(struct work_struct *work)
 		skb = cfg80211_vendor_event_alloc(wiphy, len, BRCM_VENDOR_EVENT_ACS, kflags);
 #endif /* CONFIG_ARCH_MSM SUPPORT_WDEV_CFG80211_VENDOR_EVENT_ALLOC */
 		if (!skb) {
-			WL_ERR(("%s: Error, no memory for event\n", __FUNCTION__));
+			WL_ERR(("Error, no memory for event\n"));
 			ret = BCME_NOMEM;
 			break;
 		}
@@ -6021,19 +6047,19 @@ static void wl_cfgscan_acs_result_event(struct work_struct *work)
 		    (nla_put_u16(skb, BRCM_VENDOR_ATTR_ACS_CHWIDTH, result.ch_width) < 0) ||
 		    (nla_put_u8(skb, BRCM_VENDOR_ATTR_ACS_HW_MODE, result.hw_mode) < 0) ||
 		    (nla_put_s8(skb, BRCM_VENDOR_ATTR_ACS_LINK_ID, -1) < 0)) {
-			WL_ERR(("%s: Error, fail to fill the result\n", __FUNCTION__));
+			WL_ERR(("Error, fail to fill the result\n"));
 			ret = BCME_BADARG;
 			break;
 		}
 
-		WL_INFORM_MEM(("%s: ACS event notified. freq:%d:%d\n",
-			__FUNCTION__, result.pri_freq, result.sec_freq));
+		WL_INFORM_MEM(("ACS event notified. freq:%d:%d\n",
+			result.pri_freq, result.sec_freq));
 		cfg80211_vendor_event(skb, kflags);
 	} while (0);
 
 	if (ret < 0) {
 		if (skb) {
-			WL_ERR(("%s: free the event since fail with ret=%d\n", __FUNCTION__, ret));
+			WL_ERR(("free the event since fail with ret=%d\n", ret));
 			dev_kfree_skb_any(skb);
 		}
 	}
@@ -6087,6 +6113,9 @@ static int wl_cfgscan_acs_do_apcs(struct net_device *dev,
 	int ret = 0;
 	u32 band = parameter->band;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+#ifdef WL_ESCAN
+	wl_scan_info_t *scan_info = NULL;
+#endif /* WL_ESCAN */
 
 	if (parameter->scc_chspec) {
 		chosen = parameter->scc_chspec;
@@ -6123,6 +6152,20 @@ static int wl_cfgscan_acs_do_apcs(struct net_device *dev,
 		/* Make sure any scan is not running before ACS trigged. */
 		wl_cfgscan_cancel_scan(cfg);
 
+#ifdef WL_ESCAN
+		scan_info = kzalloc(sizeof(wl_scan_info_t), GFP_KERNEL);
+		if (scan_info == NULL) {
+			WL_ERR(("scan_info kzalloc failed\n"));
+			ret = -ENOMEM;
+			goto done;
+		}
+		memcpy(&scan_info->channels, pBuffer, buf_len);
+		chosen = wl_ext_autochannel(dev, ACS_DRV_BIT, band, scan_info);
+		if (chosen) {
+			goto done2;
+		} else
+			goto done;
+#endif /* WL_ESCAN */
 		ret = wldev_ioctl_set(dev, WLC_START_CHANNEL_SEL, (void *)pBuffer, buf_len);
 		if (ret) {
 			WL_ERR(("autochannel trigger failed. ret=%d\n", ret));
@@ -6131,7 +6174,7 @@ static int wl_cfgscan_acs_do_apcs(struct net_device *dev,
 		}
 	} else {
 		ret = BCME_BADARG;
-		WL_ERR(("%s: Error, no parameter to go, ret=%d\n", __FUNCTION__, ret));
+		WL_ERR(("Error, no parameter to go, ret=%d\n", ret));
 	}
 
 	if (ret < 0) {
@@ -6158,8 +6201,8 @@ static int wl_cfgscan_acs_do_apcs(struct net_device *dev,
 		} else {
 			chosen = dtoh32(chosen);
 		}
-		WL_DBG(("%s: round=%d, ret=%d, chosen=0x%X\n",
-		          __FUNCTION__, APCS_MAX_RETRY-retry, ret, chosen));
+		WL_DBG(("round=%d, ret=%d, chosen=0x%X\n",
+		          APCS_MAX_RETRY-retry, ret, chosen));
 
 		if (chosen) {
 			int freq;
@@ -6169,8 +6212,8 @@ static int wl_cfgscan_acs_do_apcs(struct net_device *dev,
 				wf_chspec_ctlchan((chanspec_t)chosen),
 				CHSPEC_BAND((chanspec_t)chosen));
 
-			WL_INFORM_MEM(("%s: * good, selected chosen=0x%X, freq:%d channel = %d\n",
-				__FUNCTION__, chosen, freq, channel));
+			WL_INFORM_MEM(("* good, selected chosen=0x%X, freq:%d channel = %d\n",
+				chosen, freq, channel));
 			break;
 		}
 		OSL_SLEEP(300);
@@ -6179,8 +6222,8 @@ static int wl_cfgscan_acs_do_apcs(struct net_device *dev,
 done:
 
 	if (!chosen) {
-		WL_ERR(("%s: retry=%d, ret=%d, chosen=0x%X. Attempt default chan\n",
-			__FUNCTION__, retry, ret, chosen));
+		WL_ERR(("retry=%d, ret=%d, chosen=0x%X. Attempt default chan\n",
+			retry, ret, chosen));
 
 		/* On failure, fallback to a default channel */
 		chosen = wl_cfgscan_acs_find_default_chanspec(cfg, band, pList, qty);
@@ -6196,6 +6239,10 @@ done:
 done2:
 	*pCH = chosen;
 
+#ifdef WL_ESCAN
+	if (scan_info)
+		kfree(scan_info);
+#endif /* WL_ESCAN */
 	return ret;
 }
 
@@ -6289,8 +6336,7 @@ wl_convert_freqlist_to_chspeclist(struct bcm_cfg80211 *cfg,
 
 		/* mark all the bands found */
 		parameter->freq_bands |= CHSPEC_TO_WLC_BAND(CHSPEC_BAND(chspeclist[j]));
-		WL_DBG(("%s: list[%d]=%d => chspec=0x%x\n", __FUNCTION__, i,
-				pElem_freq[i], chspeclist[j]));
+		WL_DBG(("list[%d]=%d => chspec=0x%x\n", i, pElem_freq[i], chspeclist[j]));
 		j++;
 	}
 
@@ -6447,7 +6493,7 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 				len, NULL) ||
 #endif
 				(!tb[BRCM_VENDOR_ATTR_ACS_HW_MODE])) {
-			WL_ERR(("%s: ***Error, parse fail\n", __FUNCTION__));
+			WL_ERR(("***Error, parse fail\n"));
 			ret = BCME_BADARG;
 			break;
 		}
@@ -6456,39 +6502,39 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 		(void)memset_s(parameter, sizeof(drv_acs_params_t), 0, sizeof(drv_acs_params_t));
 		if (tb[BRCM_VENDOR_ATTR_ACS_HW_MODE]) {
 			parameter->hw_mode = nla_get_u8(tb[BRCM_VENDOR_ATTR_ACS_HW_MODE]);
-			WL_TRACE(("%s: hw_mode=%d\n", __FUNCTION__, parameter->hw_mode));
+			WL_TRACE(("hw_mode=%d\n", parameter->hw_mode));
 		}
 		if (tb[BRCM_VENDOR_ATTR_ACS_HT_ENABLED]) {
 			parameter->ht_enabled = nla_get_u8(tb[BRCM_VENDOR_ATTR_ACS_HT_ENABLED]);
-			WL_TRACE(("%s: ht_enabled=%d\n", __FUNCTION__, parameter->ht_enabled));
+			WL_TRACE(("ht_enabled=%d\n", parameter->ht_enabled));
 		}
 		if (tb[BRCM_VENDOR_ATTR_ACS_HT40_ENABLED]) {
 			parameter->ht40_enabled = nla_get_u8(tb[BRCM_VENDOR_ATTR_ACS_HT40_ENABLED]);
-			WL_TRACE(("%s: ht40_enabled=%d\n", __FUNCTION__, parameter->ht40_enabled));
+			WL_TRACE(("ht40_enabled=%d\n", parameter->ht40_enabled));
 		}
 		if (tb[BRCM_VENDOR_ATTR_ACS_VHT_ENABLED]) {
 			parameter->vht_enabled = nla_get_u8(tb[BRCM_VENDOR_ATTR_ACS_VHT_ENABLED]);
-			WL_TRACE(("%s: vht_enabled=%d\n", __FUNCTION__, parameter->vht_enabled));
+			WL_TRACE(("vht_enabled=%d\n", parameter->vht_enabled));
 		}
 		parameter->he_enabled = parameter->vht_enabled;
 		if (tb[BRCM_VENDOR_ATTR_ACS_CHWIDTH]) {
 			parameter->ch_width = nla_get_u8(tb[BRCM_VENDOR_ATTR_ACS_CHWIDTH]);
-			WL_TRACE(("%s: ch_width=%d\n", __FUNCTION__, parameter->ch_width));
+			WL_TRACE(("ch_width=%d\n", parameter->ch_width));
 		}
 
 		if (tb[BRCM_VENDOR_ATTR_ACS_CH_LIST]) {
 #ifdef WL_ACS_CHANLIST
 			pChanList = tb[BRCM_VENDOR_ATTR_ACS_CH_LIST];
 			chan_list_len = nla_len(tb[BRCM_VENDOR_ATTR_ACS_CH_LIST]);
-			WL_TRACE(("%s: chan_list_len=%d\n", __FUNCTION__, chan_list_len));
+			WL_TRACE(("chan_list_len=%d\n", chan_list_len));
 #else
-			WL_ERR(("%s: chan_list attribute not supported\n", __FUNCTION__));
+			WL_ERR(("chan_list attribute not supported\n"));
 #endif /* WL_ACS_CHANLIST */
 		}
 		if (tb[BRCM_VENDOR_ATTR_ACS_FREQ_LIST]) {
 			pFreqList = tb[BRCM_VENDOR_ATTR_ACS_FREQ_LIST];
 			freq_list_len = nla_len(tb[BRCM_VENDOR_ATTR_ACS_FREQ_LIST]) / sizeof(int);
-			WL_TRACE(("%s: freq_list_len=%d\n", __FUNCTION__, freq_list_len));
+			WL_TRACE(("freq_list_len=%d\n", freq_list_len));
 		}
 
 		switch (parameter->hw_mode) {
@@ -6510,19 +6556,19 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 				parameter->band = WLC_BAND_INVALID;
 				break;
 		}
-		WL_INFORM_MEM(("%s: hw_mode=%d, band=%d ht_enabled:%d vht_enabled:%d ch_width:%d "
+		WL_INFORM_MEM(("hw_mode=%d, band=%d ht_enabled:%d vht_enabled:%d ch_width:%d "
 			"parameter->he_enabled = %d\n",
-			__FUNCTION__, parameter->hw_mode, parameter->band, parameter->ht_enabled,
+			parameter->hw_mode, parameter->band, parameter->ht_enabled,
 			parameter->vht_enabled, parameter->ch_width, parameter->he_enabled));
 		if (WLC_BAND_INVALID == parameter->band) {
 			ret = BCME_BADARG;
-			WL_ERR(("%s: *Error, hw_mode=%d based band invalid\n",
-			        __FUNCTION__, parameter->hw_mode));
+			WL_ERR(("*Error, hw_mode=%d based band invalid\n",
+			        parameter->hw_mode));
 			break;
 		}
 
-		WL_INFORM_MEM(("%s: dynamic channel policy=%d\n",
-			__FUNCTION__, cfg->dyn_chan_policy));
+		WL_INFORM_MEM(("dynamic channel policy=%d\n",
+			cfg->dyn_chan_policy));
 
 		/* count memory requirement */
 		qty = chan_list_len + freq_list_len;
@@ -6533,18 +6579,17 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 			  * 80MHz * 4, 160MHz * 8
 			  */
 		         (1 + 2 + 4 + 8));
-		WL_TRACE(("%s: qty=%d+%d=%d, total=%d\n",
-		          __FUNCTION__, chan_list_len, freq_list_len, qty, total));
+		WL_TRACE(("qty=%d+%d=%d, total=%d\n",
+		          chan_list_len, freq_list_len, qty, total));
 
 		if (total <= 0) {
 			ret = BCME_BADARG;
-			WL_ERR(("%s: *Error, total number (%d) is invalid\n",
-					__FUNCTION__, total));
+			WL_ERR(("*Error, total number (%d) is invalid\n", total));
 			break;
 		}
 		pReq = MALLOCZ(cfg->osh, total);
 		if (!pReq) {
-			WL_ERR(("%s: *Error, no memory for %d bytes\n", __FUNCTION__, total));
+			WL_ERR(("*Error, no memory for %d bytes\n", total));
 			ret = BCME_NOMEM;
 			break;
 		} else {
@@ -6571,7 +6616,7 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 					chanspec, parameter);
 			}
 		}
-		WL_TRACE(("%s: list_len=%d after ch_list\n", __FUNCTION__, req_len));
+		WL_TRACE(("list_len=%d after ch_list\n", req_len));
 #endif /* WL_ACS_CHANLIST */
 
 		/* process 'freq_list' */
@@ -6595,22 +6640,22 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 
 		if (req_len <= 0) {
 			ret = BCME_BADARG;
-			WL_ERR(("%s: *Error, Freq conversion resulted in (%d) no of frequencies\n",
-				__FUNCTION__, req_len));
+			WL_ERR(("*Error, Freq conversion resulted in (%d) no of frequencies\n",
+				req_len));
 			break;
 		}
 
-		WL_TRACE(("%s: list_len=%d after freq_list\n", __FUNCTION__, req_len));
+		WL_TRACE(("list_len=%d after freq_list\n", req_len));
 
 		pReq->count = req_len;
 		req_len = pReq->count * (sizeof(pReq->element[0]));
 
-		WL_DBG(("%s: set pReq->count=0x%X, with req_len=%d\n",
-		          __FUNCTION__, pReq->count, req_len));
+		WL_DBG(("set pReq->count=%d, with req_len=%d\n",
+		          pReq->count, req_len));
 		ret = wl_cfgscan_acs_do_apcs(net, parameter, &ch_chosen, total,
 				(unsigned char *)pReq, pReq->count, pList);
-		WL_DBG(("%s: do acs ret=%d, ch_chosen=(0x%X)\n",
-		          __FUNCTION__, ret, ch_chosen));
+		WL_DBG(("do acs ret=%d, ch_chosen=(0x%X)\n",
+		          ret, ch_chosen));
 		if (ret >= 0) {
 			u8 acs_work_cnt = ACS_WORK_CNT;
 			while (delayed_work_pending(&delay_work_acs.acs_delay_work)) {
@@ -6628,8 +6673,8 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 			delay_work_acs.ch_chosen = ch_chosen;
 			schedule_delayed_work(&delay_work_acs.acs_delay_work,
 			                      msecs_to_jiffies((const unsigned int)50));
-			WL_INFORM_MEM(("%s: scheduled work for acs event (chspec:0x%X)\n",
-					__FUNCTION__, ch_chosen));
+			WL_INFORM_MEM(("scheduled work for acs event (chspec:0x%X)\n",
+					ch_chosen));
 			ret = 0;
 		}
 
@@ -6637,8 +6682,7 @@ wl_cfgscan_acs(struct wiphy *wiphy,
 
 	/* free and clean up */
 	if (NULL != pReq) {
-		WL_TRACE(("%s: free the pReq=0x%p with total=%d\n",
-			__FUNCTION__, pReq, total));
+		WL_TRACE(("free the pReq=0x%p with total=%d\n", pReq, total));
 		MFREE(cfg->osh, pReq, total);
 	}
 
@@ -7315,10 +7359,12 @@ wl_cfgscan_update_dynamic_channels(struct bcm_cfg80211 *cfg,
 {
 	struct net_info *netinfo = NULL;
 	chanspec_t *sta_chanspec = NULL;
-	wl_mlo_link_t *perlink = NULL;
 	bool dynamic_channel_found = FALSE;
 	u32 err = BCME_OK;
+#ifdef WL_MLO
+	wl_mlo_link_t *perlink = NULL;
 	int i;
+#endif /* WL_MLO */
 
 	if (!cfg->dyn_chan_policy) {
 		WL_DBG(("dynamic chan policy not enabled\n"));
@@ -7334,6 +7380,7 @@ wl_cfgscan_update_dynamic_channels(struct bcm_cfg80211 *cfg,
 	/* If STA is connected in an indoor channel, clear it and indicate to upper layer */
 	netinfo = wl_get_netinfo_by_wdev(cfg, ndev->ieee80211_ptr);
 	if (netinfo && (link_up == TRUE)) {
+#ifdef WL_MLO
 		if (netinfo->mlinfo.num_links) {
 			/* MLO case, check for each link chanspec */
 			for (i = 0; i < MAX_MLO_LINK; i++) {
@@ -7349,7 +7396,9 @@ wl_cfgscan_update_dynamic_channels(struct bcm_cfg80211 *cfg,
 					break;
 				}
 			}
-		} else {
+		} else
+#endif /* WL_MLO */
+		{
 			sta_chanspec = (chanspec_t *)wl_read_prof(cfg, ndev, WL_PROF_CHAN);
 			if (sta_chanspec && wf_chspec_valid(*sta_chanspec)) {
 				WL_INFORM_MEM(("check for indoor/radar:0x%x\n", *sta_chanspec));

@@ -1,7 +1,7 @@
 /*
  * DHD Protocol Module for CDC and BDC.
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -57,6 +57,7 @@
 #include <dhd_proto.h>
 #include <dhd_bus.h>
 #include <dhd_dbg.h>
+#include <wl_android.h>
 
 #ifdef EXT_STA
 #include <siutils.h>
@@ -68,6 +69,10 @@
 #include <wlfc_proto.h>
 #include <dhd_wlfc.h>
 #endif
+
+#ifdef DHD_HWTSTAMP
+#include <dhd_linux_priv.h>
+#endif /* DHD_HWTSTAMP */
 
 #define RETRIES 2		/* # of retries to retrieve matching ioctl response */
 #define BUS_HEADER_LEN	(24+DHD_SDALIGN)	/* Must be at least SDPCM_RESERVE
@@ -168,6 +173,14 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 			goto done;
 		}
 	}
+#if defined(OOB_GPIO_TSF_INTR) || defined(OOB_TSF_INTR)
+	if (cmd == WLC_GET_VAR && buf) {
+		if (!strcmp((char *)buf, "gettsf")) {
+			dhd->tsf_host_ns = 0;
+			dhd->tsf_intr_state = TSF_INTR_PREPARE;
+		}
+	}
+#endif /* OOB_GPIO_TSF_INTR || OOB_TSF_INTR */
 
 	bzero(msg, sizeof(cdc_ioctl_t));
 
@@ -494,6 +507,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 	struct bdc_header *h;
 #endif
 	uint8 data_offset = 0;
+	uint32 bdc_hdr_len = BDC_HEADER_LEN;
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
@@ -509,11 +523,38 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 	}
 
 	h = (struct bdc_header *)PKTDATA(dhd->osh, pktbuf);
+#ifdef DHD_HWTSTAMP
+	if (h->flags2 & BDC_FLAG2_TSF_FLAG) {
+		struct bdc_header_tsf *h_tsf = (struct bdc_header_tsf *)PKTDATA(dhd->osh, pktbuf);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30))
+		if (dhd->info->stmpconf.rx_filter) {
+			ktime_t tsf;
+			struct skb_shared_hwtstamps *tst;
+			tst = skb_hwtstamps(((struct sk_buff*)(pktbuf)));
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
+			tsf = (s64) h_tsf->tsf_h;
+			tsf = tsf << 32 | h_tsf->tsf_l;
+			/* Convert micro sec tsf to nano sec kernel hw timestamp */
+			tst->hwtstamp = tsf * 1000;
+			DHD_INFO(("RX tsf: %08x %08x\n", h_tsf->tsf_h, h_tsf->tsf_l));
+#else
+			tsf.tv64 = (s64) h_tsf->tsf_h;
+			tsf.tv64 = tsf.tv64 << 32 | h_tsf->tsf_l;
+			/* Convert micro sec tsf to nano sec kernel hw timestamp */
+			tst->hwtstamp.tv64 = tsf.tv64 * 1000;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) */
+		}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)) */
+		h_tsf->dataOffset = h_tsf->dataOffset - 2;
+		bdc_hdr_len = bdc_hdr_len + 8;
+	}
+#endif /* DHD_HWTSTAMP */
 
 	if (!ifidx) {
 		/* for tx packet, skip the analysis */
 		data_offset = h->dataOffset;
-		PKTPULL(dhd->osh, pktbuf, BDC_HEADER_LEN);
+		PKTPULL(dhd->osh, pktbuf, bdc_hdr_len);
 		goto exit;
 	}
 
@@ -536,7 +577,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 
 	PKTSETPRIO(pktbuf, (h->priority & BDC_PRIORITY_MASK));
 	data_offset = h->dataOffset;
-	PKTPULL(dhd->osh, pktbuf, BDC_HEADER_LEN);
+	PKTPULL(dhd->osh, pktbuf, bdc_hdr_len);
 #endif /* BDC */
 
 #ifdef PROP_TXSTATUS
@@ -553,6 +594,17 @@ exit:
 	PKTPULL(dhd->osh, pktbuf, (data_offset << 2));
 	return 0;
 }
+
+#ifdef DHD_LOSSLESS_ROAMING
+int dhd_update_sdio_data_prio_map(dhd_pub_t *dhdp)
+{
+	const uint8 prio2tid[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+
+	bcopy(prio2tid, dhdp->flow_prio_map, sizeof(uint8) * NUMPRIO);
+
+	return BCME_OK;
+}
+#endif // DHD_LOSSLESS_ROAMING
 
 int
 dhd_prot_attach(dhd_pub_t *dhd)

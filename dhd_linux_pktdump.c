@@ -1,7 +1,7 @@
 /*
  * Packet dump helper functions
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -508,7 +508,7 @@ dhd_dump_pkt(dhd_pub_t *dhdp, int ifidx, uint8 *pktdata, uint32 pktlen,
 		if (dhd_check_arp(pktdata, ether_type)) {
 #ifdef ARP_DETECTION
 			if (!tx)
-				wl_ext_arp_receive(dhdp, ifidx);
+				wl_ext_arp_receive(dhdp, ifidx, pktdata, pktlen);
 #endif /* ARP_DETECTION */
 			dhd_arp_dump(dhdp, ifidx, pktdata, tx, pkthash, pktfate);
 		}
@@ -780,56 +780,56 @@ dhd_dump_wsc_message(dhd_pub_t *dhd, int ifidx, uint8 *pktdata,
 			case WSC_MSG_M1:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M1);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M1), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M1");
 				break;
 			case WSC_MSG_M2:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M2);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M2), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M2");
 				break;
 			case WSC_MSG_M3:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M3);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M3), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M3");
 				break;
 			case WSC_MSG_M4:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M4);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M4), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M4");
 				break;
 			case WSC_MSG_M5:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M5);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M5), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M5");
 				break;
 			case WSC_MSG_M6:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M6);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M6), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M6");
 				break;
 			case WSC_MSG_M7:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M7);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M7), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M7");
 				break;
 			case WSC_MSG_M8:
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WPS_M8);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(WPS_M8), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, WPS M8");
 				break;
@@ -841,13 +841,13 @@ dhd_dump_wsc_message(dhd_pub_t *dhd, int ifidx, uint8 *pktdata,
 	} else if (eap_wsc->opcode == WSC_OPCODE_START) {
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WSC_START);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(WSC_START), ifidx, tx, cond);
 		EAP_PRINT("EAP Packet, WSC Start");
 	} else if (eap_wsc->opcode == WSC_OPCODE_DONE) {
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_WSC_DONE);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(WSC_DONE), ifidx, tx, cond);
 		EAP_PRINT("EAP Packet, WSC Done");
 	} else {
@@ -887,13 +887,13 @@ dhd_dump_eap_packet(dhd_pub_t *dhd, int ifidx, uint8 *pktdata,
 			if (isreq) {
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_REQID);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(EAP_REQ_IDENTITY), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, Request, Identity");
 			} else {
 #ifdef WL_EXT_IAPSTA
 				wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_RSPID);
-#endif
+#endif /* WL_EXT_IAPSTA */
 				DHD_STATLOG_DATA(dhd, ST(EAP_RESP_IDENTITY), ifidx, tx, cond);
 				EAP_PRINT("EAP Packet, Response, Identity");
 			}
@@ -1024,42 +1024,42 @@ dhd_dump_eapol_4way_message(dhd_pub_t *dhd, int ifidx, uint8 *pktdata, bool tx,
 	case EAPOL_4WAY_M1:
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_4WAY_M1);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(EAPOL_M1), ifidx, tx, cond);
 		EAP_PRINT("EAPOL Packet, 4-way handshake, M1");
 		break;
 	case EAPOL_4WAY_M2:
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_4WAY_M2);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(EAPOL_M2), ifidx, tx, cond);
 		EAP_PRINT("EAPOL Packet, 4-way handshake, M2");
 		break;
 	case EAPOL_4WAY_M3:
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_4WAY_M3);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(EAPOL_M3), ifidx, tx, cond);
 		EAP_PRINT("EAPOL Packet, 4-way handshake, M3");
 		break;
 	case EAPOL_4WAY_M4:
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_4WAY_M4);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(EAPOL_M4), ifidx, tx, cond);
 		EAP_PRINT("EAPOL Packet, 4-way handshake, M4");
 		break;
 	case EAPOL_GROUPKEY_M1:
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_GROUPKEY_M1);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(EAPOL_GROUPKEY_M1), ifidx, tx, cond);
 		EAP_PRINT_REPLAY("EAPOL Packet, GROUP Key handshake, M1");
 		break;
 	case EAPOL_GROUPKEY_M2:
 #ifdef WL_EXT_IAPSTA
 		wl_ext_update_conn_state(dhd, ifidx, CONN_STATE_GROUPKEY_M2);
-#endif
+#endif /* WL_EXT_IAPSTA */
 		DHD_STATLOG_DATA(dhd, ST(EAPOL_GROUPKEY_M2), ifidx, tx, cond);
 		EAP_PRINT_REPLAY("EAPOL Packet, GROUP Key handshake, M2");
 		if (ifidx == 0 && tx && pktfate) {

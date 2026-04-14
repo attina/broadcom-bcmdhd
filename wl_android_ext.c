@@ -176,6 +176,7 @@ const auth_name_map_t auth_name_map[] = {
 	{WL_AUTH_OPEN_SYSTEM,	WPA2_AUTH_PSK|WPA2_AUTH_PSK_SHA256,	"wpa2/sha256/psk"},
 	{WL_AUTH_OPEN_SYSTEM,	WPA2_AUTH_PSK|WPA2_AUTH_FT,			"wpa2/ft/psk"},
 	{WL_AUTH_OPEN_SYSTEM,	WPA2_AUTH_UNSPECIFIED,				"wpa2/eap"},
+	{WL_AUTH_OPEN_SYSTEM,	WPA2_AUTH_1X_SHA256,				"wpa2/sha256/eap"},
 	{WL_AUTH_OPEN_SYSTEM,	WPA2_AUTH_FT|WPA2_AUTH_UNSPECIFIED,	"wpa2/ft/eap"},
 	{WL_AUTH_OPEN_SYSTEM,	WPA3_AUTH_SAE_PSK,	"wpa3/psk"},
 	{WL_AUTH_OPEN_SHARED,	WPA3_AUTH_SAE_PSK,	"wpa3/psk"},
@@ -185,6 +186,8 @@ const auth_name_map_t auth_name_map[] = {
 	{WL_AUTH_SAE_KEY,		WPA2_AUTH_PSK|WPA3_AUTH_SAE_PSK,	"wpa2/wpa3sae/psk"},
 	{WL_AUTH_OPEN_SYSTEM,	0x20,	"wpa3/psk"},
 	{WL_AUTH_SAE_KEY,		0x20,	"wpa3sae/psk"},
+	{WL_AUTH_OPEN_SYSTEM,	WPA3_AUTH_SAE_PSK|WPA2_AUTH_FT,		"wpa3/ft/psk"},
+	{WL_AUTH_OPEN_SHARED,	WPA3_AUTH_SAE_PSK|WPA2_AUTH_FT,		"wpa3sae/ft/psk"},
 	{WL_AUTH_OPEN_SYSTEM,	WPA2_AUTH_PSK|WPA3_AUTH_SAE_PSK|WPA2_AUTH_PSK_SHA256,	"wpa3/sha256/psk"},
 	{WL_AUTH_SAE_KEY,		WPA2_AUTH_PSK|WPA3_AUTH_SAE_PSK|WPA2_AUTH_PSK_SHA256,	"wpa3sae/sha256/psk"},
 	{WL_AUTH_OPEN_SYSTEM,	0x20|WPA2_AUTH_PSK|WPA2_AUTH_PSK_SHA256,	"wpa3/sha256/psk"},
@@ -559,17 +562,17 @@ wl_ext_user_sync(struct dhd_pub *dhd, int ifidx, bool lock)
 	if (lock) {
 #if defined(WL_CFG80211)
 		mutex_lock(&cfg->usr_sync);
-#endif
+#endif /* WL_CFG80211 */
 #if defined(WL_ESCAN)
 		mutex_lock(&escan->usr_sync);
-#endif
+#endif /* WL_ESCAN */
 	} else {
 #if defined(WL_CFG80211)
 		mutex_unlock(&cfg->usr_sync);
-#endif
+#endif /* WL_CFG80211 */
 #if defined(WL_ESCAN)
 		mutex_unlock(&escan->usr_sync);
-#endif
+#endif /* WL_ESCAN */
 	}
 }
 #endif /* WL_CFG80211 && WL_ESCAN */
@@ -704,7 +707,7 @@ set_channel:
 	if (wf_chspec_valid(chspec)) {
 		fw_chspec = wl_ext_chspec_host_to_driver(dhd, chspec);
 		if (fw_chspec != INVCHANSPEC) {
-			if ((err = wl_ext_iovar_setint(dev, "chanspec", fw_chspec)) == BCME_BADCHAN) {
+			if ((err = wldev_iovar_setint(dev, "chanspec", fw_chspec)) == BCME_BADCHAN) {
 				if (bw == WL_CHANSPEC_BW_80)
 					goto change_bw;
 				err = wl_ext_ioctl(dev, WLC_SET_CHANNEL, &_chan, sizeof(_chan), 1);
@@ -732,7 +735,8 @@ change_bw:
 		AEXT_ERROR(dev->name, "Invalid chanspec 0x%x\n", chspec);
 		err = BCME_ERROR;
 	}
-	*ret_chspec = fw_chspec;
+	if (ret_chspec)
+		*ret_chspec = fw_chspec;
 
 	return err;
 }
@@ -778,7 +782,7 @@ wl_ext_channel(struct net_device *dev, char* command, int total_len)
 	}
 
 	if (chan_info.chan > 0) {
-		ret = wl_ext_set_chanspec(dev, &chan_info, &chanspec);
+		ret = wl_ext_set_chanspec(dev, &chan_info, NULL);
 	} else {
 		ret = wl_ext_iovar_getint(dev, "chanspec", (s32 *)&fw_chanspec);
 		if (ret == BCME_OK) {
@@ -1051,7 +1055,7 @@ wl_ext_get_mlo(struct net_device *dev, char *mlo_str, int total_len, bool dump)
 	u32 mlo_config_size = sizeof(wl_mlo_config_v1_t), buflen = WLC_IOCTL_SMLEN, ret;
 	u8 *ioctl_buf = NULL, *rsp_buf = NULL, *rem, multilink = 0;
 	u16 rem_len = WLC_IOCTL_SMLEN;
-	int i;
+	int bytes_w = 0, i;
 
 	memset(mlo_str, 0, total_len);
 	if (!cfg->mlo.supported) {
@@ -1095,24 +1099,30 @@ wl_ext_get_mlo(struct net_device *dev, char *mlo_str, int total_len, bool dump)
 			break;
 	}
 
-	if ((IS_STA_IFACE(wdev) || IS_P2P_CLIENT_IFACE(wdev))) {
-		mlink.id = WL_MLO_CMD_MULTILINK_ACTIVE;
-		mlink.len = 0;
-		ret = wldev_iovar_getbuf(dev, "mlo", &mlink, sizeof(mlink),
-			rsp_buf, WLC_IOCTL_SMLEN, &cfg->ioctl_buf_sync);
-		if (unlikely(ret)) {
-			AEXT_ERROR(dev->name, "mlo multilink active get error (%d)\n", ret);
-			goto fail;
-		}
-		multilink = *(rsp_buf);
+	if (dump) {
+		AEXT_INFO(dev->name, "mode/links/flags = %d/%d/0x%x\n",
+			mresp->mode, mresp->num_links, mresp->flags);
 	}
 
-	snprintf(mlo_str, total_len, "mlo=mode[%s]/multilink[%d]",
-		row->mlo_name, multilink);
-
-	if (dump) {
-		AEXT_INFO(dev->name, "mode/multilink/links/flags = %d/%d/%d/0x%x\n",
-			mresp->mode, multilink, mresp->num_links, mresp->flags);
+	if (mresp->num_links) {
+		bytes_w += snprintf(mlo_str+bytes_w, total_len-bytes_w,
+			"mlo=mode[%s]", row->mlo_name);
+		if ((IS_STA_IFACE(wdev) || IS_P2P_CLIENT_IFACE(wdev))) {
+			mlink.id = WL_MLO_CMD_MULTILINK_ACTIVE;
+			mlink.len = 0;
+			ret = wldev_iovar_getbuf(dev, "mlo", &mlink, sizeof(mlink),
+				rsp_buf, WLC_IOCTL_SMLEN, &cfg->ioctl_buf_sync);
+			if (unlikely(ret)) {
+				AEXT_ERROR(dev->name, "mlo multilink active get error (%d)\n", ret);
+				goto fail;
+			}
+			multilink = *(rsp_buf);
+			bytes_w += snprintf(mlo_str+bytes_w, total_len-bytes_w,
+				"/multilink[%d]", multilink);
+		}
+	} else {
+		bytes_w += snprintf(mlo_str+bytes_w, total_len-bytes_w,
+			"mlo=mode[NON-ML]");
 	}
 
 fail:
@@ -1125,17 +1135,17 @@ fail:
 
 extern bool wl_dup_mac_exists(struct bcm_cfg80211 *cfg, u8 *mac_addr);
 void
-wl_ext_get_vif_macaddr(struct net_device *dev, int wl_iftype,
+wl_ext_get_vif_macaddr(struct net_device *primary_dev, int wl_iftype,
 	int ifidx, u8 *mac_addr)
 {
 #ifdef WL_CFG80211
-	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	struct bcm_cfg80211 *cfg = wl_get_cfg(primary_dev);
 	int i = 0;
 #endif /* WL_CFG80211 */
-	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct dhd_pub *dhd = dhd_get_pub(primary_dev);
 	bool random = FALSE;
 
-	memcpy_s(mac_addr, ETH_ALEN, dev->perm_addr, ETH_ALEN);
+	memcpy_s(mac_addr, ETH_ALEN, primary_dev->perm_addr, ETH_ALEN);
 	mac_addr[0] |= 0x02;
 	mac_addr[5] += ifidx;
 
@@ -1162,8 +1172,80 @@ wl_ext_get_vif_macaddr(struct net_device *dev, int wl_iftype,
 #endif /* WL_CFG80211 */
 
 exit:
-	AEXT_INFO("wlan", "iftype=%d, ifidx=%d, mac=%pM%s\n",
-		wl_iftype, ifidx, mac_addr, random ? "(random)" : "");
+	AEXT_INFO("wlan", "iftype=%d(%s), mac=%pM%s\n",
+		wl_iftype, wl_iftype_to_str(wl_iftype),	mac_addr, random ? "(random)" : "");
+}
+
+static int
+wl_wsec_info_tlv_cb(void *ctx, const uint8 *data, uint16 type, uint16 len)
+{
+	uint32 *value = (uint32 *)ctx;
+	uint32 tlv_data = (*data) + (*(data + 1) << 8) +
+			(*(data + 2) << 16) +
+			(*(data + 3) << 24);
+
+	if (type == WL_WSEC_INFO_TEST_PMK || type == WL_WSEC_INFO_SAE_GROUPS) {
+		AEXT_ERROR("wlan", "not implemented type %d\n", type);
+		prhex("wsec", (uchar *)data, len);
+	} else {
+		*value = tlv_data;
+	}
+	return BCME_OK;
+}
+
+static void
+wl_ext_get_wsec_info(struct net_device *dev, uint16 type, uint32 *value)
+{
+	wl_wsec_info_t *wsec_info;
+	bcm_xtlv_t *wsec_info_tlv;
+	uint8 wsec_info_hdr_size = OFFSETOF(wl_wsec_info_t, tlvs);
+	uint32 param_len = OFFSETOF(wl_wsec_info_t, tlvs);
+	uint8 tlv_data[4];
+	uint16 tlv_data_len = sizeof(uint32);
+	uint16 tot_tlv_len;
+	uint16 iov_len;
+	s32 ret = BCME_OK;
+	s8 *buf, *rsp;
+	
+	buf = kmalloc(WLC_IOCTL_SMLEN, GFP_KERNEL);
+	rsp = kmalloc(WLC_IOCTL_SMLEN, GFP_KERNEL);
+
+	memset(buf, 0, WLC_IOCTL_SMLEN);
+	wsec_info = (wl_wsec_info_t *)buf;
+	wsec_info->version = WL_WSEC_INFO_VERSION_1;
+	wsec_info_tlv = (bcm_xtlv_t *)(buf + wsec_info_hdr_size);
+
+	tlv_data_len = 4;
+	bcm_xtlv_pack_xtlv(wsec_info_tlv, type, tlv_data_len, tlv_data, 0);
+	tlv_data_len = 4;
+	param_len += (WL_WSEC_INFO_TLV_HDR_LEN + tlv_data_len);
+
+	wsec_info->num_tlvs ++;
+	iov_len = param_len + (strlen("wsec_info") + 1);
+	ret = wldev_iovar_getbuf(dev, "wsec_info", buf, param_len, rsp, iov_len, NULL);
+	if (ret) {
+		if (ret == BCME_UNSUPPORTED) {
+			AEXT_TRACE(dev->name, "wsec_info iovar is not supported\n");
+			*value = ret;
+			goto exit;
+		} else {
+			AEXT_ERROR(dev->name, "error (%d)\n", ret);
+			*value = ret;
+			goto exit;
+		}
+	}
+
+	wsec_info_tlv = (bcm_xtlv_t *)(rsp + wsec_info_hdr_size);
+	tot_tlv_len = param_len - OFFSETOF(wl_wsec_info_t, tlvs);
+	ret = bcm_unpack_xtlv_buf(value, (uint8*)wsec_info_tlv, tot_tlv_len,
+		BCM_XTLV_OPTION_ALIGN32, wl_wsec_info_tlv_cb);
+
+exit:
+	if (buf)
+		kfree(buf);
+	if (rsp)
+		kfree(rsp);
+	return;
 }
 
 void
@@ -1172,11 +1254,9 @@ wl_ext_get_sec(struct net_device *dev, char *sec, int total_len, bool dump)
 #ifdef WL_CFG80211
 	struct wireless_dev *wdev = ndev_to_wdev(dev);
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
-	struct wl_security *prof_sec = wl_read_prof(cfg, dev, WL_PROF_SEC);
-	int sup_wpa = 0;
 #endif /* WL_CFG80211 */
-	int auth=0, wpa_auth=0, wsec=0, mfp=0, i;
-	int bytes_written=0;
+	int auth = 0, wpa_auth = 0, wsec = 0, mfp = 0, sae_pwe = 0, i;
+	int bytes_w = 0;
 	bool match = FALSE;
 
 	memset(sec, 0, total_len);
@@ -1184,61 +1264,60 @@ wl_ext_get_sec(struct net_device *dev, char *sec, int total_len, bool dump)
 	wl_ext_iovar_getint(dev, "wpa_auth", &wpa_auth);
 	wl_ext_iovar_getint(dev, "wsec", &wsec);
 	wldev_iovar_getint(dev, "mfp", &mfp);
+	wl_ext_get_wsec_info(dev, WL_WSEC_INFO_BSS_SAE_PWE, &sae_pwe);
 
 #ifdef WL_CFG80211
-	if ((IS_STA_IFACE(wdev) || IS_P2P_CLIENT_IFACE(wdev))) {
-		wldev_iovar_getint(dev, "sup_wpa", &sup_wpa);
-		if (sup_wpa)
-			bytes_written += snprintf(sec+bytes_written, total_len, "idsup/");
+	if (wl_is_4way_hs_offld_enabled(cfg, dev)) {
+		if ((IS_STA_IFACE(wdev) || IS_P2P_CLIENT_IFACE(wdev)))
+			bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "idsup/");
+		else if ((IS_AP_IFACE(wdev) || IS_P2P_GO_IFACE(wdev)))
+			bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "idauth/");
 	}
-#ifdef WL_IDAUTH
-	else if ((IS_AP_IFACE(wdev) || IS_P2P_GO_IFACE(wdev))) {
-		if (cfg->idauth_enabled && prof_sec->fw_wpa_auth)
-			bytes_written += snprintf(sec+bytes_written, total_len, "idauth/");
-	}
-#endif /* WL_IDAUTH */
 #endif /* WL_CFG80211 */
 	match = FALSE;
 	for (i=0; i<sizeof(auth_name_map)/sizeof(auth_name_map[0]); i++) {
 		const auth_name_map_t* row = &auth_name_map[i];
 		if (row->auth == auth && row->wpa_auth == wpa_auth) {
-			bytes_written += snprintf(sec+bytes_written, total_len, "%s",
+			bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "%s",
 				row->auth_name);
 			match = TRUE;
 			break;
 		}
 	}
 	if (!match) {
-		bytes_written += snprintf(sec+bytes_written, total_len, "%d/0x%x",
+		bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "%d/0x%x",
 			auth, wpa_auth);
 	}
 
 	if (mfp == WL_MFP_NONE) {
-		bytes_written += snprintf(sec+bytes_written, total_len, "/mfpn");
+		bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "/mfpn");
 	} else if (mfp == WL_MFP_CAPABLE) {
-		bytes_written += snprintf(sec+bytes_written, total_len, "/mfpc");
+		bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "/mfpc");
 	} else if (mfp == WL_MFP_REQUIRED) {
-		bytes_written += snprintf(sec+bytes_written, total_len, "/mfpr");
+		bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "/mfpr");
 	} else {
-		bytes_written += snprintf(sec+bytes_written, total_len, "/%d", mfp);
+		bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "/%d", mfp);
 	}
 
 	match = FALSE;
 	for (i=0; i<sizeof(wsec_name_map)/sizeof(wsec_name_map[0]); i++) {
 		const wsec_name_map_t* row = &wsec_name_map[i];
 		if (row->wsec == (wsec&0x7)) {
-			bytes_written += snprintf(sec+bytes_written, total_len, "/%s",
+			bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "/%s",
 				row->wsec_name);
 			match = TRUE;
 			break;
 		}
 	}
 	if (!match) {
-		bytes_written += snprintf(sec+bytes_written, total_len, "/0x%x", wsec);
+		bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "/0x%x", wsec);
 	}
+
+	bytes_w += snprintf(sec+bytes_w, total_len-bytes_w, "/sae_pwe[%d]", sae_pwe);
+
 	if (dump) {
-		AEXT_INFO(dev->name, "auth/wpa_auth/mfp/wsec = %d/0x%x/%d/0x%x\n",
-			auth, wpa_auth, mfp, wsec);
+		AEXT_INFO(dev->name, "auth/wpa_auth/mfp/wsec/sae_pwe = %d/0x%x/%d/0x%x/%d\n",
+			auth, wpa_auth, mfp, wsec, sae_pwe);
 	}
 }
 
@@ -1273,6 +1352,66 @@ wl_ext_passive_chan(struct net_device *dev, u32 chanspec)
 	}
 
 	return FALSE;
+}
+
+uint32
+wl_ext_candidate_chanspec(struct net_device *dev, chanspec_t *chanspecs, int chan_cnt)
+{
+	struct net_device *enab_dev = NULL;
+	uint32 chanspec = 0, chanspec_2g = 0, chanspec_5g = 0, chanspec_6g = 0;
+	uint32 enab_chanspec = 0;
+	bool band_5g_1 = FALSE, band_5g_4 = FALSE;
+	int band, chan, i;
+
+	for (i = 0; i < chan_cnt; i++) {
+		chanspec = chanspecs[i];
+		band = CHSPEC2WLC_BAND(chanspec);
+		if (band == WLC_BAND_6G)
+			chanspec_6g = chanspec;
+		else if (band == WLC_BAND_5G) {
+			chan = wf_chspec_ctlchan(chanspec);
+			if (chan >= 36 && chan <= 48) {
+				chanspec_5g = chanspec;
+				band_5g_1 = TRUE;
+			}
+			else if (chan >= 149 && chan <= 161 && !band_5g_1) {
+				chanspec_5g = chanspec;
+				band_5g_4 = TRUE;
+			}
+			else if (chan >= 165 && !band_5g_1 && !band_5g_4) {
+				chanspec_5g = chanspec;
+			}
+			else if (!chanspec_5g)
+				chanspec_5g = chanspec;
+		}
+		else if (band == WLC_BAND_2G)
+			chanspec_2g = chanspec;
+	}
+
+	enab_dev = wl_ext_max_prio_enabled_if(dev);
+	if (enab_dev)
+		enab_chanspec = wl_ext_get_chanspec(enab_dev, NULL);
+
+	if (chanspec_6g) {
+		if (chanspec_2g && enab_chanspec && CHSPEC2WLC_BAND(enab_chanspec) == WLC_BAND_2G)
+			chanspec = chanspec_2g;
+		else
+			chanspec = chanspec_6g;
+	}
+	else if (chanspec_5g) {
+		if (chanspec_2g && wl_ext_passive_chan(dev, chanspec_5g))
+			chanspec = chanspec_2g;
+		else
+			chanspec = chanspec_5g;
+	}
+	else if (chanspec_2g)
+		chanspec = chanspec_2g;
+
+	WL_MSG(dev->name, "channel %s-%d(%sMHz)\n",
+		WLCBAND2STR(CHSPEC2WLC_BAND(chanspec)), wf_chspec_ctlchan(chanspec),
+		wf_chspec_to_bw_str(chanspec));
+
+	return chanspec;
 }
 
 void
@@ -2829,11 +2968,14 @@ wl_ext_disable_band(struct net_device *dev, char *cmd, char *data,
 #ifdef WL_CFG80211
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 #endif
-	int ret = -1;
-	int val;
+	int val, ret = -1;
 
 	if (data) {
 		val = (int)simple_strtol(data, NULL, 0);
+		AEXT_INFO(dev->name, "%s %d\n", cmd, val);
+#ifdef WL_CFG80211
+		wl_cfg80211_cleanup_connection(dev, TRUE);
+#endif
 		ret = wl_ext_iovar_setint(dev, cmd, val);
 #ifdef WL_CFG80211
 		if (!ret)
@@ -2943,6 +3085,58 @@ wl_ext_roam(struct net_device *dev, char *cmd, char *data,
 	return ret;
 }
 
+#ifdef DOT1AS_TIMESYNC
+int
+wl_ext_get_tsf(struct net_device *dev, char *cmd, char *data,
+	char *command, int total_len)
+{
+#if defined(OOB_GPIO_TSF_INTR) || defined(OOB_TSF_INTR)
+	dhd_pub_t *dhd = dhd_get_pub(dev);
+#endif /* OOB_GPIO_TSF_INTR || OOB_TSF_INTR */
+	s8 buf[WLC_IOCTL_SMLEN];
+	uint64 tsf_wlan_us;
+	uint32 bytes_written = 0;
+	int gettsf_ret = 0;
+	ssize_t ret = 0;
+
+	gettsf_ret = wldev_iovar_getbuf(dev, "gettsf", NULL, 0, buf, sizeof(buf), NULL);
+	if (gettsf_ret == BCME_UNSUPPORTED) {
+		ret = wldev_iovar_getbuf(dev, "tsf", NULL, 0, buf, sizeof(buf), NULL);
+		if (ret != BCME_OK) {
+			AEXT_ERROR(dev->name, "tsf ret(%d)\n", gettsf_ret);
+			goto exit;
+		}
+	} else if (gettsf_ret != BCME_OK) {
+		AEXT_ERROR(dev->name, "gettsf ret(%d)\n", gettsf_ret);
+		ret = gettsf_ret;
+		goto exit;
+	}
+
+	tsf_wlan_us = *((uint32*)(buf+4));
+	tsf_wlan_us = (tsf_wlan_us << 32) | *(uint32*)buf;
+	bytes_written += snprintf(command+bytes_written,
+		total_len - 1 - bytes_written, "WLAN=%llu", tsf_wlan_us);
+#if defined(OOB_GPIO_TSF_INTR) || defined(OOB_TSF_INTR)
+	if (dhd->tsf_intr_state == TSF_INTR_UPDATED) {
+		uint64 tsf_host_ns = dhd->tsf_host_ns;
+		dhd->tsf_intr_state = TSF_INTR_CLEAR;
+		bytes_written += snprintf(command+bytes_written,
+			total_len - 1 - bytes_written, ", HOST=%llu", tsf_host_ns);
+		AEXT_INFO(dev->name, "WLAN=%llu(us), HOST=%llu(ns)\n",
+			tsf_wlan_us, tsf_host_ns);
+	} else
+#endif /* OOB_GPIO_TSF_INTR || OOB_TSF_INTR */
+	{
+		AEXT_INFO(dev->name, "WLAN=%llu(us), HOST=0%s\n",
+			tsf_wlan_us, gettsf_ret ? "(-23)" : "");
+	}
+	ret = bytes_written;
+
+exit:
+	return ret;
+}
+#endif /* DOT1AS_TIMESYNC */
+
 typedef int (wl_ext_tpl_parse_t)(struct net_device *dev, char *cmd, char *data,
 	char *command, int total_len);
 
@@ -3002,6 +3196,9 @@ const wl_ext_iovar_tpl_t wl_ext_iovar_tpl_list[] = {
 	{WLC_GET_VAR,	WLC_SET_VAR,	"roam_delta",			wl_ext_roam},
 	{WLC_GET_VAR,	WLC_SET_VAR,	"disable_5g_band",	wl_ext_disable_band},
 	{WLC_GET_VAR,	WLC_SET_VAR,	"disable_6g_band",	wl_ext_disable_band},
+#ifdef DOT1AS_TIMESYNC
+	{WLC_GET_VAR,	WLC_SET_VAR,	"tsf",				wl_ext_get_tsf},
+#endif /* DOT1AS_TIMESYNC */
 };
 
 /*
@@ -3797,22 +3994,22 @@ wl_ext_autochannel(struct net_device *dev, uint acs, uint32 band,
 #ifdef WL_ESCAN
 	if (acs & ACS_DRV_BIT)
 		chosen = wl_escan_drv_apcs(dev, band, scan_info);
-#endif
+#endif /* WL_ESCAN */
 
 	if (chosen == 0) {
 		wl_ext_get_default_chan(dev, &chan_2g, &chan_5g, &chan_6g);
-		if (band == WLC_BAND_5G && chan_5g) {
-			chosen = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chan_5g),
+		if (((band & WLC_BAND_5G) || band == WLC_BAND_AUTO) && chan_5g) {
+			chosen = wf_create_chspec_from_primary(chan_5g,
 				WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_5G, 0);
 			channel = chan_5g;
 		}
-		else if (band == WLC_BAND_6G && chan_6g) {
-			chosen = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chan_6g),
+		else if ((band & WLC_BAND_6G) && chan_6g) {
+			chosen = wf_create_chspec_from_primary(chan_6g,
 				WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_6G, 0);
 			channel = chan_5g;
 		}
-		else if (band == WLC_BAND_2G && chan_2g) {
-			chosen = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chan_2g),
+		else if ((band & WLC_BAND_2G) && chan_2g) {
+			chosen = wf_create_chspec_from_primary(chan_2g,
 				WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_2G, 0);
 			channel = chan_2g;
 		}

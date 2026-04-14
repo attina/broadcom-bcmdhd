@@ -27,12 +27,22 @@
 			printf("[%s] ESCAN-INFO) %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
+#ifdef WL_CFG80211
+extern uint wl_dbg_level;
+#define ESCAN_SCAN(name, arg1, args...) \
+	do { \
+		if (android_msg_level & ANDROID_SCAN_LEVEL || wl_dbg_level & ANDROID_SCAN_LEVEL) { \
+			printf("[%s] ESCAN-SCAN) %s : " arg1, name, __func__, ## args); \
+		} \
+	} while (0)
+#else
 #define ESCAN_SCAN(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_SCAN_LEVEL) { \
 			printf("[%s] ESCAN-SCAN) %s : " arg1, name, __func__, ## args); \
 		} \
 	} while (0)
+#endif
 #define ESCAN_DBG(name, arg1, args...) \
 	do { \
 		if (android_msg_level & ANDROID_DBG_LEVEL) { \
@@ -90,6 +100,16 @@ typedef struct {
 	struct ether_addr BSSID;
 } removal_element_t;
 #endif /* ESCAN_BUF_OVERFLOW_MGMT */
+
+#if defined(ROAM_ENABLE) || defined(ROAM_CHANNEL_CACHE)
+#define  ESCAN_CHANNEL_CACHE
+#endif
+#ifdef ESCAN_CHANNEL_CACHE
+extern void add_roam_cache2(struct net_device *dev, wl_bss_info_v109_t *bi);
+#endif /* ESCAN_CHANNEL_CACHE */
+#ifdef ROAM_CHANNEL_CACHE
+extern void update_roam_cache2(struct net_device *dev);
+#endif /* ROAM_CHANNEL_CACHE */
 
 /* Return a new chanspec given a legacy chanspec
  * Returns INVCHANSPEC on error
@@ -233,6 +253,355 @@ wl_ch_host_to_driver(int ioctl_ver, u16 channel)
 	return wl_chspec_host_to_driver(ioctl_ver, chanspec);
 }
 
+#ifdef WL_ESCAN_ROAM_CACHE
+static void
+wl_escan_free_roam_cache(struct net_device *dev)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, *cur, **roam_head;
+
+	mutex_lock(&escan->usr_sync);
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	for (;node;) {
+		ESCAN_INFO(dev->name, "free BSSID %pM\n", &node->bssid);
+		cur = node;
+		node = cur->next;
+		MFREE(dhd->osh, cur, sizeof(roam_cache_t));
+	}
+	*roam_head = NULL;
+	mutex_unlock(&escan->usr_sync);
+}
+
+static void
+wl_escan_del_roam_cache(struct net_device *dev, const struct ether_addr *bssid)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, *prev, **roam_head;
+	int tmp = 0;
+
+	mutex_lock(&escan->usr_sync);
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	prev = node;
+	for (;node;) {
+		if (!memcmp(&node->bssid, bssid, ETHER_ADDR_LEN)) {
+			if (node == *roam_head) {
+				tmp = 1;
+				*roam_head = node->next;
+			} else {
+				tmp = 0;
+				prev->next = node->next;
+			}
+			ESCAN_INFO(dev->name, "del BSSID %pM\n", &node->bssid);
+			MFREE(dhd->osh, node, sizeof(roam_cache_t));
+			if (tmp == 1) {
+				node = *roam_head;
+				prev = node;
+			} else {
+				node = prev->next;
+			}
+			continue;
+		}
+		prev = node;
+		node = node->next;
+	}
+	mutex_unlock(&escan->usr_sync);
+}
+
+#ifdef WL_ESCAN_BLACKLIST_ROAM
+#define DIRTY_THRESH 3
+static int
+wl_escan_blacklist_roam_cache(struct net_device *dev)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, **roam_head;
+	int dirty_cnt = 0, num_new, ret = BCME_OK;
+	uint32 mem_needed = 0, mem_needed_new, mac_list_size;
+	maclist_t *blacklist = NULL, *blacklist_new = NULL;
+
+	mutex_lock(&escan->usr_sync);
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	for (;node;) {
+		if (node->dirty > DIRTY_THRESH)
+			dirty_cnt++;
+		node = node->next;
+	}
+	if (dirty_cnt){
+		mem_needed = (uint32) (OFFSETOF(maclist_t, ea) +
+			sizeof(struct ether_addr) * (dirty_cnt));
+		blacklist = (maclist_t *)MALLOCZ(dhd->osh, mem_needed);
+		if (!blacklist) {
+			ESCAN_ERROR(dev->name, "MALLOCZ failed\n");
+			goto exit;
+		}
+		node = *roam_head;
+		for (;node;) {
+			if (node->dirty > DIRTY_THRESH) {
+				ESCAN_INFO(dev->name, "dirty %d, BSSID %pM\n", node->dirty, &node->bssid);
+				memcpy(&(blacklist->ea[blacklist->count]), &node->bssid, ETHER_ADDR_LEN);
+				blacklist->count++;
+			}
+			node = node->next;
+		}
+		ESCAN_ERROR(dev->name, "%d dirty bssid\n", dirty_cnt);
+	}
+	if (dirty_cnt && dhd->conf->mac_list) {
+		num_new = dhd->conf->mac_list->count;
+		mac_list_size = num_new * sizeof(struct ether_addr);
+		if (blacklist)
+			mem_needed_new = mem_needed + mac_list_size;
+		else
+			mem_needed_new = (uint32) (OFFSETOF(maclist_t, ea) + mac_list_size);
+		blacklist_new = (maclist_t *) MALLOCZ(dhd->osh, mem_needed_new);
+		if (!blacklist_new) {
+			ESCAN_ERROR(dev->name, "MALLOCZ blacklist_new failed\n");
+			goto exit;
+		}
+		if (blacklist) {
+			memcpy(blacklist_new, blacklist, mem_needed);
+			MFREE(dhd->osh, blacklist, mem_needed);
+		}
+		blacklist = blacklist_new;
+		mem_needed = mem_needed_new;
+		memcpy(&(blacklist->ea[blacklist->count]), dhd->conf->mac_list->ea, mac_list_size);
+		blacklist->count += num_new;
+	}
+	mutex_unlock(&escan->usr_sync);
+
+	if (dirty_cnt) {
+		ret = dhd_dev_set_blacklist_bssid(dev, blacklist, mem_needed, TRUE);
+		if (ret)
+			ESCAN_ERROR(dev->name, "set blacklist failed %d\n", ret);
+	}
+exit:
+	if (blacklist)
+		MFREE(dhd->osh, blacklist, mem_needed);
+	return ret;
+}
+#endif /* WL_ESCAN_BLACKLIST_ROAM */
+
+void
+wl_escan_dirty_roam_cache(struct net_device *dev, struct ether_addr *bssid, bool set)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, **roam_head;
+
+	mutex_lock(&escan->usr_sync);
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	for (;node;) {
+		if (!memcmp(&node->bssid, bssid, ETHER_ADDR_LEN)) {
+			if (set)
+				node->dirty++;
+			else
+				node->dirty = 0;
+			ESCAN_INFO(dev->name, "%s dirty %d, BSSID %pM\n",
+				set ? "set" : "clr", node->dirty, bssid);
+		}
+		node = node->next;
+	}
+
+	mutex_unlock(&escan->usr_sync);
+#ifdef WL_ESCAN_BLACKLIST_ROAM
+	wl_escan_blacklist_roam_cache(dev);
+#endif /* WL_ESCAN_BLACKLIST_ROAM */
+}
+
+static void
+wl_escan_update_roam_cache(struct net_device *dev, wl_bss_info_v109_t *bi)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, **roam_head;
+
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	for (;node;) {
+		if (!memcmp(&node->bssid, &bi->BSSID, ETHER_ADDR_LEN) &&
+				((bi->SSID_len != roam_cache_ctrl->ssid.SSID_len) ||
+				bcmp(bi->SSID, roam_cache_ctrl->ssid.SSID, bi->SSID_len))) {
+			mutex_unlock(&escan->usr_sync);
+			wl_escan_del_roam_cache(dev, &bi->BSSID);
+			mutex_lock(&escan->usr_sync);
+			return;
+		}
+		node = node->next;
+	}
+
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	for (;node;) {
+		if (!memcmp(&node->bssid, &bi->BSSID, ETHER_ADDR_LEN)) {
+			if (node->chanspec != bi->chanspec) {
+				ESCAN_INFO(dev->name,
+					"update BSSID %pM, chan=%s-%-3d(%sMHz) => %s-%-3d(%sMHz)\n",
+					&node->bssid,
+					CHSPEC2BANDSTR(node->chanspec), wf_chspec_ctlchan(node->chanspec),
+					wf_chspec_to_bw_str(node->chanspec),
+					CHSPEC2BANDSTR(bi->chanspec), wf_chspec_ctlchan(bi->chanspec),
+					wf_chspec_to_bw_str(bi->chanspec));
+				node->chanspec = bi->chanspec;
+			}
+			break;
+		}
+		node = node->next;
+	}
+
+}
+
+int
+wl_escan_add_roam_cache(struct net_device *dev)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, *prev, *leaf, **roam_head;
+	struct ether_addr bssid;
+	u32 chanspec;
+	int ret = BCME_OK;
+
+	if (!wl_ext_associated(dev, &bssid)) {
+		ESCAN_INFO(dev->name, "Not associated\n");
+		return BCME_NOTASSOCIATED;
+	}
+	chanspec = wl_ext_get_chanspec(dev, NULL);
+
+	mutex_lock(&escan->usr_sync);
+	if (escan->escan_state == ESCAN_STATE_DOWN) {
+		ESCAN_ERROR(dev->name, "STATE is down\n");
+		goto exit;
+	}
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	prev = NULL;
+	for (;node;) {
+		if (!memcmp(&node->bssid, &bssid, ETHER_ADDR_LEN)) {
+			if (node->chanspec != chanspec) {
+				ESCAN_INFO(dev->name,
+					"update BSSID %pM, chan=%s-%-3d(%sMHz) => %s-%-3d(%sMHz)\n",
+					&bssid,
+					CHSPEC2BANDSTR(node->chanspec), wf_chspec_ctlchan(node->chanspec),
+					wf_chspec_to_bw_str(node->chanspec),
+					CHSPEC2BANDSTR(chanspec), wf_chspec_ctlchan(chanspec),
+					wf_chspec_to_bw_str(chanspec));
+				node->chanspec = chanspec;
+				node->dirty = 0;
+			}
+			goto exit;
+		}
+		prev = node;
+		node = node->next;
+	}
+
+	leaf = MALLOCZ(dhd->osh, sizeof(roam_cache_t));
+	if (!leaf) {
+		ESCAN_ERROR(dev->name, "Memory alloc failure %d\n", (int)sizeof(roam_cache_t));
+		ret = BCME_NOMEM;
+		goto exit;
+	}
+	ESCAN_INFO(dev->name, "add BSSID %pM, chan=%s-%-3d(%sMHz)\n",
+		&bssid, CHSPEC2BANDSTR(chanspec), wf_chspec_ctlchan(chanspec),
+		wf_chspec_to_bw_str(chanspec));
+
+	leaf->next = NULL;
+	memcpy(&leaf->bssid, &bssid, ETHER_ADDR_LEN);
+	leaf->chanspec = chanspec;
+
+	if (!prev)
+		*roam_head = leaf;
+	else
+		prev->next = leaf;
+
+exit:
+	mutex_unlock(&escan->usr_sync);
+	return ret;
+}
+
+void
+wl_escan_init_roam_cache(struct net_device *dev, wlc_ssid_t *ssid)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+
+	if (!ssid) {
+		ESCAN_ERROR(dev->name, "NULL ssid\n");
+		return;
+	}
+
+	mutex_lock(&escan->usr_sync);
+	if (bcmp(&roam_cache_ctrl->ssid, ssid, sizeof(wlc_ssid_t))) {
+		mutex_unlock(&escan->usr_sync);
+		wl_escan_free_roam_cache(dev);
+		mutex_lock(&escan->usr_sync);
+		memcpy(&roam_cache_ctrl->ssid, ssid, sizeof(wlc_ssid_t));
+	}
+#ifdef WL_ESCAN_BLACKLIST_ROAM
+	if (dhd->conf->mac_list)
+		dhd_conf_set_blacklist_bssid(dhd, 0);
+	else
+		dhd_dev_set_blacklist_bssid(dev, NULL, 0, TRUE);
+#endif /* WL_ESCAN_BLACKLIST_ROAM */
+	mutex_unlock(&escan->usr_sync);
+}
+
+int
+wl_escan_roam_channel_list(struct net_device *dev, wl_scan_info_t *scan_info,
+	int n_channels)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, **roam_head;
+	int i, repeat = FALSE, n = 0;
+
+	mutex_lock(&escan->usr_sync);
+	if (bcmp(&roam_cache_ctrl->ssid, &scan_info->ssid, sizeof(wlc_ssid_t))) {
+		ESCAN_ERROR(dev->name, "mismatch SSID \"%s\", expected \"%s\"\n",
+			roam_cache_ctrl->ssid.SSID, scan_info->ssid.SSID);
+		goto exit;
+	}
+
+	roam_head = &roam_cache_ctrl->m_cache_head;
+	node = *roam_head;
+	for (;node;) {
+		for (i = 0; i < n; i++) {
+			if (scan_info->channels.chanspec[i] == node->chanspec) {
+				repeat = TRUE;
+				break;
+			}
+		}
+		if (repeat) {
+			repeat = FALSE;
+			continue;
+		}
+		scan_info->channels.chanspec[n++] = node->chanspec;
+		if (n >= n_channels) {
+			ESCAN_ERROR(dev->name, "Too many roam scan channels\n");
+			goto exit;
+		}
+		node = node->next;
+	}
+
+exit:
+	scan_info->channels.count = n;
+	ESCAN_SCAN(dev->name, "channel cnt:%d\n", n);
+	mutex_unlock(&escan->usr_sync);
+	return n;
+}
+#endif /* WL_ESCAN_ROAM_CACHE */
+
 static inline struct wl_bss_info *next_bss(wl_scan_results_v109_t *list,
 	struct wl_bss_info *bss)
 {
@@ -312,8 +681,18 @@ wl_escan_inform_bss(struct net_device *dev, struct wl_escan_info *escan)
 #else
 	bi = next_bss(bss_list, bi);
 	for_each_bss(bss_list, bi, i) {
+#ifdef ESCAN_CHANNEL_CACHE
+		add_roam_cache2(dev, bi);
+#endif /* ESCAN_CHANNEL_CACHE */
+#ifdef WL_ESCAN_ROAM_CACHE
+		wl_escan_update_roam_cache(dev, bi);
+#endif /* WL_ESCAN_ROAM_CACHE */
 		wl_escan_dump_bss(dev, escan, bi);
 	}
+#ifdef ROAM_CHANNEL_CACHE
+	/* print_roam_cache(); */
+	update_roam_cache2(dev);
+#endif /* ROAM_CHANNEL_CACHE */
 	if (escan->autochannel)
 		wl_ext_get_best_channel(dev, bss_list,
 			&escan->best_2g_ch, &escan->best_5g_ch, &escan->best_6g_ch);
@@ -1114,23 +1493,89 @@ exit:
 	return ret;
 }
 
+chanspec_t
+wl_escan_candidate_bss(struct net_device *dev, wlc_ssid_t *ssid,
+	struct ether_addr *bssid)
+{
+	struct dhd_pub *dhd = dhd_get_pub(dev);
+	struct wl_escan_info *escan = dhd->escan;
+	wl_scan_results_v109_t *bss_list;
+	struct wl_bss_info *bi = NULL;
+	struct ether_addr tgt_bssid;
+	chanspec_t tgt_chspec = 0;
+	int i, dirty = 0, tgt_dirty = 99, tgt_rssi = -128;
+#ifdef WL_ESCAN_ROAM_CACHE
+	roam_cache_ctrl_t *roam_cache_ctrl = &escan->roam_cache_ctrl;
+	roam_cache_t *node, **roam_head;
+#endif /* WL_ESCAN_ROAM_CACHE */
+
+	if (!escan->bss_list) {
+		ESCAN_SCAN(dev->name, "NULL bss_list\n");
+		goto exit;
+	}
+	if (dhd->escan->escan_state == ESCAN_STATE_SCANING) {
+		ESCAN_ERROR(dev->name, "escan busy\n");
+		goto exit;
+	}
+
+	mutex_lock(&escan->usr_sync);
+	bss_list = escan->bss_list;
+	bi = next_bss(bss_list, bi);
+	for_each_bss(bss_list, bi, i) {
+		if ((bi->SSID_len == ssid->SSID_len) && !bcmp(bi->SSID, ssid->SSID, ssid->SSID_len) &&
+				dtoh16(bi->RSSI) >= tgt_rssi && bcmp(&bi->BSSID, bssid, ETHER_ADDR_LEN)) {
+#ifdef WL_ESCAN_ROAM_CACHE
+			roam_head = &roam_cache_ctrl->m_cache_head;
+			node = *roam_head;
+			dirty = 0;
+			for (;node;) {
+				if (!memcmp(&bi->BSSID, &node->bssid, ETHER_ADDR_LEN)) {
+					dirty = node->dirty;
+					break;
+				}
+				node = node->next;
+			}
+#endif /* WL_ESCAN_ROAM_CACHE */
+			if (dirty <= tgt_dirty) {
+				memcpy(&tgt_bssid, &bi->BSSID, ETHER_ADDR_LEN);
+				tgt_chspec = wl_chspec_driver_to_host(escan->ioctl_ver, bi->chanspec);
+				tgt_rssi = dtoh16(bi->RSSI);
+				tgt_dirty = dirty;
+			}
+		}
+	}
+	mutex_unlock(&escan->usr_sync);
+
+exit:
+	if (tgt_chspec) {
+		memcpy(bssid, &tgt_bssid, ETHER_ADDR_LEN);
+		WL_MSG(dev->name, "BSSID %pM, channel %s-%d(%sMHz), rssi=%d, dirty=%d\n", bssid,
+			WLCBAND2STR(CHSPEC2WLC_BAND(tgt_chspec)), wf_chspec_ctlchan(tgt_chspec),
+			wf_chspec_to_bw_str(tgt_chspec), tgt_rssi, tgt_dirty);
+	} else {
+		WL_MSG(dev->name, "No candidate bss found\n" );
+		memcpy(bssid, &ether_bcast, ETHER_ADDR_LEN);
+	}
+	return tgt_chspec;
+}
+
 #ifdef WL_SUPPORT_AUTO_CHANNEL
 static void
-wl_construct_acs_list(struct net_device *net, uint32 band, wl_scan_info_t *scan_info)
+wl_construct_acs_list(struct net_device *dev, uint32 band, wl_scan_info_t *scan_info)
 {
 	int i, cnt = 0;
 #ifdef WL_6G_BAND
 	chanspec_t chanspec;
 #endif /* WL_6G_BAND */
 
-	if (band == WLC_BAND_2G || band == WLC_BAND_AUTO) {
+	if ((band & WLC_BAND_2G) || band == WLC_BAND_AUTO) {
 		for (i=0; i<13; i++) {
 			scan_info->channels.chanspec[i+cnt] = wf_create_chspec_from_primary(i+1,
 				WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_2G, 0);
 		}
 		cnt += 13;
 	}
-	if (band == WLC_BAND_5G || band == WLC_BAND_AUTO) {
+	if ((band & WLC_BAND_5G) || band == WLC_BAND_AUTO) {
 		for (i=0; i<4; i++) {
 			scan_info->channels.chanspec[i+cnt] = wf_create_chspec_from_primary(36+i*4,
 				WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_5G, 0);
@@ -1143,12 +1588,12 @@ wl_construct_acs_list(struct net_device *net, uint32 band, wl_scan_info_t *scan_
 		cnt += 4;
 	}
 #ifdef WL_6G_BAND
-	if (band == WLC_BAND_6G) {
-		for (i=0; i<59; i++) {
+	if ((band & WLC_BAND_6G) || band == WLC_BAND_AUTO) {
+		for (i=0; i<55; i++) {
 			chanspec = wf_create_chspec_from_primary(1+i*4,
 				WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_6G, 0);
 			if (CHSPEC_IS_6G_PSC(chanspec)) {
-				scan_info->channels.chanspec[i+cnt] = chanspec;
+				scan_info->channels.chanspec[cnt] = chanspec;
 				cnt++;
 			}
 		}
@@ -1213,25 +1658,22 @@ wl_escan_get_drv_apcs(struct net_device *dev, uint32 band)
 	retry = retry_max;
 	while (retry--) {
 		if (escan->escan_state == ESCAN_STATE_IDLE) {
-			if (band == WLC_BAND_5G || band == WLC_BAND_AUTO) {
-				chanspec = wf_create_chspec_from_primary(
-					wf_chspec_primary20_chan(escan->best_5g_ch),
+			if ((band & WLC_BAND_5G) || band == WLC_BAND_AUTO) {
+				chanspec = wf_create_chspec_from_primary(escan->best_5g_ch,
 					WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_5G, 0);
 			}
 #ifdef WL_6G_BAND
-			else if (band == WLC_BAND_6G) {
-				chanspec = wf_create_chspec_from_primary(
-					wf_chspec_primary20_chan(escan->best_6g_ch),
+			else if (band & WLC_BAND_6G) {
+				chanspec = wf_create_chspec_from_primary(escan->best_6g_ch,
 					WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_6G, 0);
 			}
 #endif /* WL_6G_BAND */
 			else {
-				chanspec = wf_create_chspec_from_primary(
-					wf_chspec_primary20_chan(escan->best_2g_ch),
+				chanspec = wf_create_chspec_from_primary(escan->best_2g_ch,
 					WL_CHANSPEC_BW_20, WL_CHANSPEC_BAND_2G, 0);
 			}
-			WL_MSG(dev->name, "selected channel = %d(0x%x)\n",
-				wf_chspec_ctlchan(chanspec), chanspec);
+			WL_MSG(dev->name, "selected channel = %s-%-3d(0x%x)\n",
+				CHSPEC2BANDSTR(chanspec), wf_chspec_ctlchan(chanspec), chanspec);
 			goto exit;
 		}
 		ESCAN_INFO(dev->name, "escan_state=%d, %d tried\n",
@@ -1822,6 +2264,9 @@ wl_escan_deinit(struct net_device *dev, struct wl_escan_info *escan)
 	del_timer_sync(&escan->scan_timeout);
 	escan->escan_state = ESCAN_STATE_DOWN;
 
+#ifdef WL_ESCAN_ROAM_CACHE
+	wl_escan_free_roam_cache(dev);
+#endif /* WL_ESCAN_ROAM_CACHE */
 #if defined(RSSIAVG)
 	wl_free_rssi_cache(&escan->g_rssi_cache_ctrl);
 #endif

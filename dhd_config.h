@@ -151,7 +151,8 @@ enum war_flags {
 	P2P_AP_MAC_CONFLICT	= (1 << (3)),
 	RESEND_EAPOL_PKT	= (1 << (4)),
 	FW_REINIT_RXF0OVFL	= (1 << (5)),
-	ARP_DETECTION_WAR	= (1 << (6))
+	ARP_DETECTION_WAR	= (1 << (6)),
+	STA_REASSOC_WAR		= (1 << (7)),
 };
 
 enum in4way_flags {
@@ -160,7 +161,7 @@ enum in4way_flags {
 	STA_WAIT_DISCONNECTED	= (1 << (2)),
 	AP_WAIT_STA_RECONNECT	= (1 << (3)),
 	STA_FAKE_SCAN_IN_CONNECT	= (1 << (4)),
-	STA_REASSOC_RETRY	= (1 << (5)),
+	STA_RECONNECT_RETRY	= (1 << (5)),
 };
 
 enum in_suspend_flags {
@@ -229,6 +230,12 @@ enum path_type {
 	PATH_BY_MODULE = 2,
 };
 
+enum tsf_intr_state {
+	TSF_INTR_CLEAR = 0,
+	TSF_INTR_PREPARE = 1,
+	TSF_INTR_UPDATED = 2,
+};
+
 typedef struct dhd_conf {
 	uint devid;
 	uint chip;
@@ -256,6 +263,7 @@ typedef struct dhd_conf {
 	int ap_mchan_mode;
 	int go_mchan_mode;
 	int csa;
+	int mcc;
 	wl_country_t cspec;
 	bool wbtext;
 	bool fw_wbtext;
@@ -332,6 +340,7 @@ typedef struct dhd_conf {
 #ifdef BCMPCIE
 	int bus_deepsleep_disable;
 	int flow_ring_queue_threshold;
+	uint rxbufpost_sz;
 	int d2h_intr_method;
 	int d2h_intr_control;
 	int enq_hdr_pkt;
@@ -379,9 +388,11 @@ typedef struct dhd_conf {
 	char *wl_preinit;
 	char *wl_suspend;
 	char *wl_resume;
+	uint tcp_pacing_shift;
 	uint in4way;
 	char *wl_pre_in4way;
 	char *wl_post_in4way;
+	maclist_t *mac_list;
 	uint war;
 #ifdef WL_EXT_WOWL
 	uint wowl;
@@ -441,9 +452,9 @@ bool dhd_conf_legacy_cto_chip(uint16 chip);
 #endif
 #endif
 bool dhd_conf_csa_chip(dhd_pub_t *dhd);
-bool dhd_conf_vsdb_chip(dhd_pub_t *dhd);
+bool dhd_conf_mcc_chip(dhd_pub_t *dhd);
 bool dhd_conf_mlo_chip(dhd_pub_t *dhd);
-int dhd_conf_rsdb_chip(dhd_pub_t *dhd);
+bool dhd_conf_rsdb_chip(dhd_pub_t *dhd);
 #ifdef WL_CFG80211
 bool dhd_conf_legacy_chip_check(dhd_pub_t *dhd);
 bool dhd_conf_new_chip_check(dhd_pub_t *dhd);
@@ -464,6 +475,7 @@ int dhd_ccode_map_country_all(dhd_pub_t *dhd, wl_country_t *cspec);
 int dhd_ccode_map_country_list(dhd_pub_t *dhd, wl_country_t *cspec);
 #endif
 void dhd_conf_set_roam(dhd_pub_t *dhd, int ifidx);
+void dhd_conf_set_blacklist_bssid(dhd_pub_t *dhd, int ifidx);
 void dhd_conf_set_wme(dhd_pub_t *dhd, int ifidx, int mode);
 void dhd_conf_set_mchan_bw(dhd_pub_t *dhd, int go, int source);
 bool dhd_conf_del_pkt_filter(dhd_pub_t *dhd, uint32 id);

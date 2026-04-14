@@ -1,7 +1,7 @@
 /*
  * Linux DHD Bus Module for PCIE
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1021,6 +1021,10 @@ extern void dhd_dpc_kill(dhd_pub_t *dhdp);
 extern int dhdpcie_enable_device(dhd_bus_t *bus);
 #endif
 
+#ifdef OOB_GPIO_TSF_INTR
+extern int dhdpcie_oob_tsf_intr_register(dhd_bus_t *bus);
+extern void dhdpcie_oob_tsf_intr_unregister(dhd_bus_t *bus);
+#endif /* OOB_GPIO_TSF_INTR */
 #ifdef BCMPCIE_OOB_HOST_WAKE
 extern int dhdpcie_oob_intr_register(dhd_bus_t *bus);
 extern void dhdpcie_oob_intr_unregister(dhd_bus_t *bus);

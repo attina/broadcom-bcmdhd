@@ -1,7 +1,7 @@
 /*
  * DHD Linux header file (dhd_linux exports for cfg80211 and other components)
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -186,6 +186,11 @@ typedef struct wifi_adapter_info {
 #ifdef OOB_INTR
 	int 		gpio_wl_host_wake;
 #endif /* OOB_INTR */
+#ifdef OOB_GPIO_TSF_INTR
+	int 		gpio_wl_gpio_tsf;
+	uint		tsf_irq_num;
+	uint		tsf_intr_flags;
+#endif /* OOB_GPIO_TSF_INTR */
 	wait_queue_head_t status_event;
 	unsigned long status;
 #if defined(BT_OVER_SDIO)
@@ -385,10 +390,14 @@ typedef struct dhd_if {
 						 * of MC group behind PSTA
 						 */
 #endif /* DHD_WMF */
-#ifdef PCIE_FULL_DONGLE
+#if defined(PCIE_FULL_DONGLE) || defined(SYNA_FW_PKT_FWD_DISABLED)
 	struct list_head sta_list;		/* sll of associated stations */
 	spinlock_t	sta_list_lock;		/* lock for manipulating sll */
-#endif /* PCIE_FULL_DONGLE */
+#endif /* PCIE_FULL_DONGLE || SYNA_FW_PKT_FWD_DISABLED */
+#if defined(SYNA_FW_PKT_FWD_DISABLED) && !defined(PCIE_FULL_DONGLE)
+	uint8	role;
+	uint8	pad[3];
+#endif /* SYNA_FW_PKT_FWD_DISABLED && !PCIE_FULL_DONGLE */
 	uint32  ap_isolate;			/* ap-isolation settings */
 #ifdef DHD_L2_FILTER
 	bool parp_enable;
@@ -441,6 +450,17 @@ typedef struct dhd_if {
 	uint8	llc_headroom_added_len;	/* Headroom length added to this net dev for LLC */
 	bool	dhcp_request_pending;
 } dhd_if_t;
+
+#if defined(SYNA_FW_PKT_FWD_DISABLED) && !defined(PCIE_FULL_DONGLE)
+bool dhd_check_if_role(dhd_pub_t *dhdp, int ifidx, uint8 type);
+void dhd_set_if_role(dhd_pub_t *dhdp, int ifidx, uint8 type);
+#ifndef DHD_IF_ROLE_AP
+#define DHD_IF_ROLE_AP(dhdp, ifidx)	dhd_check_if_role(dhdp, ifidx, WLC_E_IF_ROLE_AP)
+#endif
+#ifndef DHD_IF_ROLE_P2PGO
+#define DHD_IF_ROLE_P2PGO(dhdp, ifidx)	dhd_check_if_role(dhdp, ifidx, WLC_E_IF_ROLE_P2P_GO)
+#endif
+#endif /* SYNA_FW_PKT_FWD_DISABLED */
 
 struct ipv6_work_info_t {
 	uint8			if_idx;

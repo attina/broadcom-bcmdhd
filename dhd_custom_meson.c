@@ -1,7 +1,7 @@
 /*
  * Platform Dependent file for Khadas VIM3
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -426,7 +426,6 @@ dhd_wlan_set_carddetect(int val)
 		msleep(WIFI_TURNON_DELAY); /* was mdelay */
 	}
 #elif defined(BCMSDIO) && defined(BCMDHD_MODULAR) && defined(ENABLE_INSMOD_NO_FW_LOAD) \
-	\
 	&&\
 	!defined(GKI_NO_SDIO_PATCH)
 #ifndef EMPTY_CARD_DETECT

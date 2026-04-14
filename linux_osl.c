@@ -1,7 +1,7 @@
 /*
  * Linux OS Independent Layer
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1530,8 +1530,8 @@ osl_assert(const char *exp, const char *file, int line)
 	/* Print assert message and give it time to be written to /var/log/messages */
 	if (!in_interrupt() && g_assert_type != 1 && g_assert_type != 3) {
 		const int delay = 3;
-		printk("%s", tempbuf);
-		printk("panic in %d seconds\n", delay);
+		pr_err("%s", tempbuf);
+		pr_err("panic in %d seconds\n", delay);
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule_timeout(delay * HZ);
 	}
@@ -1539,16 +1539,16 @@ osl_assert(const char *exp, const char *file, int line)
 
 	switch (g_assert_type) {
 	case 0:
-		printk("%s", tempbuf);
+		pr_err("%s", tempbuf);
 		BUG();
 		break;
 	case 1:
 		/* fall through */
 	case 3:
-		printk("%s", tempbuf);
+		pr_err("%s", tempbuf);
 		break;
 	case 2:
-		printk("%s", tempbuf);
+		pr_err("%s", tempbuf);
 		BUG();
 		break;
 	default:
@@ -2371,7 +2371,7 @@ osl_spin_lock(void *lock)
 	if (lock) {
 #ifdef DHD_USE_SPIN_LOCK_BH
 		/* Calling spin_lock_bh with both irq and non-irq context will lead to deadlock */
-		ASSERT(!in_irq());
+		ASSERT(!in_hardirq());
 		spin_lock_bh((spinlock_t *)lock);
 #else
 		spin_lock_irqsave((spinlock_t *)lock, flags);
@@ -2387,7 +2387,7 @@ osl_spin_unlock(void *lock, unsigned long flags)
 	if (lock) {
 #ifdef DHD_USE_SPIN_LOCK_BH
 		/* Calling spin_lock_bh with both irq and non-irq context will lead to deadlock */
-		ASSERT(!in_irq());
+		ASSERT(!in_hardirq());
 		spin_unlock_bh((spinlock_t *)lock);
 #else
 		spin_unlock_irqrestore((spinlock_t *)lock, flags);
@@ -2420,7 +2420,7 @@ osl_spin_lock_bh(void *lock)
 
 	if (lock) {
 		/* Calling spin_lock_bh with both irq and non-irq context will lead to deadlock */
-		ASSERT(!in_irq());
+		ASSERT(!in_hardirq());
 		spin_lock_bh((spinlock_t *)lock);
 	}
 
@@ -2432,7 +2432,7 @@ osl_spin_unlock_bh(void *lock, unsigned long flags)
 {
 	if (lock) {
 		/* Calling spin_lock_bh with both irq and non-irq context will lead to deadlock */
-		ASSERT(!in_irq());
+		ASSERT(!in_hardirq());
 		spin_unlock_bh((spinlock_t *)lock);
 	}
 }
@@ -2491,7 +2491,7 @@ osl_dma_lock(osl_t *osh)
 	 * Please refer to the __local_bh_enable_ip() function
 	 * in kernel/softirq.c to understand the condtion.
 	 */
-	if (likely(in_irq() || irqs_disabled())) {
+	if (likely(in_hardirq() || irqs_disabled())) {
 		spin_lock(&osh->dma_lock);
 	} else {
 		spin_lock_bh(&osh->dma_lock);

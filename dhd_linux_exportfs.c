@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD), Linux-specific network interface
  * Basically selected code segments from usb-cdc.c and usb-rndis.c
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1309,6 +1309,7 @@ static struct dhd_attr dhd_attr_memdump =
  */
 #define ASSERTINFO PLATFORM_PATH".assert.info"
 
+#ifndef DHD_EXPORT_CNTL_FILE
 static int
 get_assert_val_from_file(void)
 {
@@ -1347,6 +1348,7 @@ get_assert_val_from_file(void)
 #endif /* CUSTOMER_HW4_DEBUG */
 	return mem_val;
 }
+#endif /* !DHD_EXPORT_CNTL_FILE */
 
 void dhd_get_assert_info(dhd_pub_t *dhd)
 {
@@ -2555,6 +2557,21 @@ set_android_msg_level(struct dhd_info *dhd, const char *buf, size_t count)
 static struct dhd_attr dhd_attr_android_msg_level =
 __ATTR(android_msg_level, 0660, show_android_msg_level, set_android_msg_level);
 
+#ifdef DOT1AS_TIMESYNC
+static ssize_t
+show_tsf(struct dhd_info *dhd, char *buf)
+{
+	struct net_device *ndev = dhd_linux_get_primary_netdev(&dhd->pub);
+	ssize_t ret = 0;
+
+	ret = wl_ext_get_tsf(ndev, "tsf", NULL, buf, PAGE_SIZE);
+
+	return ret;
+}
+
+static struct dhd_attr dhd_attr_tsf = __ATTR(tsf, 0660, show_tsf, NULL);
+#endif /* DOT1AS_TIMESYNC */
+
 #if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
 #define DUMP_TRIGGER	1
 
@@ -2776,6 +2793,9 @@ static struct attribute *default_file_attrs[] = {
 	&dhd_attr_dhd_msg_level.attr,
 	&dhd_attr_dump_msg_level.attr,
 	&dhd_attr_android_msg_level.attr,
+#ifdef DOT1AS_TIMESYNC
+	&dhd_attr_tsf.attr,
+#endif /* DOT1AS_TIMESYNC */
 #if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
 	&dhd_attr_dump_in_progress.attr,
 #endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
@@ -3770,6 +3790,9 @@ static struct kobj_type dhd_logger_ktype = {
 #ifdef CSI_SUPPORT
 /* Function to show current ccode */
 static ssize_t read_csi_data(struct file *filp, struct kobject *kobj,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
+	const
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0) */
 	struct bin_attribute *bin_attr, char *buf, loff_t off, size_t count)
 {
 	dhd_info_t *dhd = to_dhd(kobj);

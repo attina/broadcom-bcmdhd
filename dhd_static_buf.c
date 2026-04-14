@@ -147,13 +147,17 @@ enum dhd_prealloc_index {
 #define DHD_EVENT_RING_SIZE		(64 * 1024)
 #define NAN_EVENT_RING_SIZE		(64 * 1024)
 
+#ifdef DHD_HWTSTAMP
+#define WLAN_DHD_WLFC_BUF_SIZE	(256 * 1024)
+#else
+#define WLAN_DHD_WLFC_BUF_SIZE	(64 * 1024)
+#endif /* DHD_HWTSTAMP */
+
 #if defined(CONFIG_64BIT)
 #define WLAN_DHD_INFO_BUF_SIZE	(24 * 1024)
-#define WLAN_DHD_WLFC_BUF_SIZE	(64 * 1024)
 #define WLAN_DHD_IF_FLOW_LKUP_SIZE	(64 * 1024)
 #else
 #define WLAN_DHD_INFO_BUF_SIZE	(16 * 1024)
-#define WLAN_DHD_WLFC_BUF_SIZE	(64 * 1024)
 #define WLAN_DHD_IF_FLOW_LKUP_SIZE	(20 * 1024)
 #endif /* CONFIG_64BIT */
 

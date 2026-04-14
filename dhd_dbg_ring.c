@@ -1,7 +1,7 @@
 /*
  * DHD debug ring API and structures - implementation
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -268,7 +268,7 @@ dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data)
 	 * If an interrupt arise after holding ring lock, It could try the same lock.
 	 * This is to use the ring lock as spin_lock_bh instead of spin_lock_irqsave.
 	 */
-	if (in_irq()) {
+	if (in_hardirq()) {
 		return BCME_BUSY;
 	}
 #endif /* defined(__linux__) */

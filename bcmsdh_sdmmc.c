@@ -1,7 +1,7 @@
 /*
  * BCMSDH Function Driver for the native SDIO/MMC driver in the Linux Kernel
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -215,12 +215,20 @@ uint8 sdmmc_get_timing(sdioh_info_t *sd);
 void  sdmmc_set_clock_rate(sdioh_info_t *sd, uint hz);
 uint  sdmmc_get_clock_rate(sdioh_info_t *sd);
 void  sdmmc_set_clock_divisor(sdioh_info_t *sd, uint sd_div);
+static void sdmmc_set_drv_type(sdioh_info_t *sd, uint drv);
 
 #define SD_DEFAULT	-1
 #define SD_HSMODE_DISABLE	0
 #define SD_HSMODE_ENABLE	1
 int sd_hsmode = SD_DEFAULT;
 module_param(sd_hsmode, int, 0);
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0))
+#define HIGH_SPEED_MAX_DTR	50000000
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0) */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 16, 0))
+#define MMC_TIMING_MMC_HS400	10
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 16, 0) */
 
 #define SD_UHSIMODE_SDR12	0
 #define SD_UHSIMODE_SDR25	1
@@ -483,6 +491,174 @@ sdioh_sdmode_to_clock(int hsmode, int uhsimode)
 	return clock;
 }
 
+static int
+sdioh_ios_show(struct mmc_host *host)
+{
+	static const char *vdd_str[] = {
+		[8]	= "2.0",
+		[9]	= "2.1",
+		[10]	= "2.2",
+		[11]	= "2.3",
+		[12]	= "2.4",
+		[13]	= "2.5",
+		[14]	= "2.6",
+		[15]	= "2.7",
+		[16]	= "2.8",
+		[17]	= "2.9",
+		[18]	= "3.0",
+		[19]	= "3.1",
+		[20]	= "3.2",
+		[21]	= "3.3",
+		[22]	= "3.4",
+		[23]	= "3.5",
+		[24]	= "3.6",
+	};
+	struct mmc_ios *ios = &host->ios;
+	const char *str;
+
+	printf("clock:\t\t%u Hz\n", ios->clock);
+	if (host->actual_clock)
+		sd_info(("actual_clock:\t%u Hz\n", host->actual_clock));
+
+	if ((1 << ios->vdd) & MMC_VDD_165_195)
+		sd_info(("vdd:\t\t%u (1.65 - 1.95 V)\n", ios->vdd));
+	else if (ios->vdd < (ARRAY_SIZE(vdd_str) - 1)
+			&& vdd_str[ios->vdd] && vdd_str[ios->vdd + 1])
+		sd_info(("vdd:\t\t%u (%s - %s)\n", ios->vdd,
+			vdd_str[ios->vdd], vdd_str[ios->vdd + 1]));
+	else
+		sd_info(("vdd:\t\t%u (invalid)\n", ios->vdd));
+
+	switch (ios->bus_mode) {
+	case MMC_BUSMODE_OPENDRAIN:
+		str = "open drain";
+		break;
+	case MMC_BUSMODE_PUSHPULL:
+		str = "push-pull";
+		break;
+	default:
+		str = "invalid";
+		break;
+	}
+	sd_info(("bus mode:\t%u (%s)\n", ios->bus_mode, str));
+
+	switch (ios->chip_select) {
+	case MMC_CS_DONTCARE:
+		str = "don't care";
+		break;
+	case MMC_CS_HIGH:
+		str = "active high";
+		break;
+	case MMC_CS_LOW:
+		str = "active low";
+		break;
+	default:
+		str = "invalid";
+		break;
+	}
+	sd_info(("chip select:\t%u (%s)\n", ios->chip_select, str));
+
+	switch (ios->power_mode) {
+	case MMC_POWER_OFF:
+		str = "off";
+		break;
+	case MMC_POWER_UP:
+		str = "up";
+		break;
+	case MMC_POWER_ON:
+		str = "on";
+		break;
+	default:
+		str = "invalid";
+		break;
+	}
+	sd_info(("power mode:\t%u (%s)\n", ios->power_mode, str));
+
+	sd_info(("bus width:\t%u (%u bits)\n", ios->bus_width, 1 << ios->bus_width));
+
+	switch (ios->timing) {
+	case MMC_TIMING_LEGACY:
+		str = "legacy";
+		break;
+	case MMC_TIMING_MMC_HS:
+		str = "mmc high-speed";
+		break;
+	case MMC_TIMING_SD_HS:
+		str = "sd high-speed";
+		break;
+	case MMC_TIMING_UHS_SDR12:
+		str = "sd uhs SDR12";
+		break;
+	case MMC_TIMING_UHS_SDR25:
+		str = "sd uhs SDR25";
+		break;
+	case MMC_TIMING_UHS_SDR50:
+		str = "sd uhs SDR50";
+		break;
+	case MMC_TIMING_UHS_SDR104:
+		str = "sd uhs SDR104";
+		break;
+	case MMC_TIMING_UHS_DDR50:
+		str = "sd uhs DDR50";
+		break;
+	case MMC_TIMING_MMC_DDR52:
+		str = "mmc DDR52";
+		break;
+	case MMC_TIMING_MMC_HS200:
+		str = "mmc HS200";
+		break;
+	case MMC_TIMING_MMC_HS400:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
+		if (mmc_card_hs400es(host->card))
+			str = "mmc HS400 enhanced strobe";
+		else
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)  */
+		str = "mmc HS400";
+		break;
+	default:
+		str = "invalid";
+		break;
+	}
+	printf("timing spec:\t%u (%s)\n", ios->timing, str);
+
+	switch (ios->signal_voltage) {
+	case MMC_SIGNAL_VOLTAGE_330:
+		str = "3.30 V";
+		break;
+	case MMC_SIGNAL_VOLTAGE_180:
+		str = "1.80 V";
+		break;
+	case MMC_SIGNAL_VOLTAGE_120:
+		str = "1.20 V";
+		break;
+	default:
+		str = "invalid";
+		break;
+	}
+	printf("signal voltage:\t%u (%s)\n", ios->signal_voltage, str);
+
+	switch (ios->drv_type) {
+	case MMC_SET_DRIVER_TYPE_A:
+		str = "driver type A";
+		break;
+	case MMC_SET_DRIVER_TYPE_B:
+		str = "driver type B";
+		break;
+	case MMC_SET_DRIVER_TYPE_C:
+		str = "driver type C";
+		break;
+	case MMC_SET_DRIVER_TYPE_D:
+		str = "driver type D";
+		break;
+	default:
+		str = "invalid";
+		break;
+	}
+	sd_info(("driver type:\t%u (%s)\n", ios->drv_type, str));
+
+	return 0;
+}
+
 int
 sdioh_set_driver_strength(struct sdio_func *func, uint8 level);
 
@@ -496,6 +672,7 @@ sdioh_set_sdio_params(sdioh_info_t *sd)
 		int ds_offset = (int)DRVSTRN_MAX_CHAR - (int)(*sd_ds);
 		if ((ds_offset >= 0) && (ds_offset <= MAX_DTS_INDEX)) {
 			ds_offset = MAX_DTS_INDEX - ds_offset;
+			sdmmc_set_drv_type(sd, ((DTS_vals[ds_offset] & 0xF0) >> 4));
 			sdioh_set_driver_strength(sd->func[0], (DTS_vals[ds_offset]));
 		}
 	}
@@ -508,7 +685,7 @@ sdioh_set_sdio_params(sdioh_info_t *sd)
 		sdmmc_set_clock_rate(sd, sd_clock);
 	}
 	sd->sd_clk_rate = sdmmc_get_clock_rate(sd);
-	printf("%s: sd_clk_rate = %u\n", __FUNCTION__, sd->sd_clk_rate);
+	sdioh_ios_show(sd->func[0]->card->host);
 }
 
 void
@@ -599,7 +776,8 @@ sdioh_set_driver_strength(struct sdio_func *func, uint8 level)
 	sdio_writeb(func, reg, SDIOD_CCCR_DRIVER_STRENGTH, &err);
 
 	if (err) {
-		sd_err(("sd_ds error for write SDIOD_CCCR_DRIVER_STRENGTH : 0x%x\n", err));
+		sd_err(("sd_ds error for write "
+			"SDIOD_CCCR_DRIVER_STRENGTH : 0x%x (%d)\n", err, err));
 		goto done;
 	} else {
 		sd_info(("SYNA: sd_ds set cccr driver strength 0x%x\n", reg));
@@ -2513,6 +2691,21 @@ sdmmc_set_clock_rate(sdioh_info_t *sd, uint hz)
 	ios->clock = hz;
 	host->ops->set_ios(host, ios);
 	sd_print(("%s: After change: sd clock rate is %u\n", __FUNCTION__, ios->clock));
+	mmc_host_clk_release(host);
+}
+
+static void
+sdmmc_set_drv_type(sdioh_info_t *sd, uint drv)
+{
+	struct sdio_func *sdio_func = sd->func[0];
+	struct mmc_host *host = sdio_func->card->host;
+	struct mmc_ios *ios = &host->ios;
+
+	ASSERT((drv >= 0) && (drv <= 3));
+	mmc_host_clk_hold(host);
+	ios->drv_type = drv;
+	host->ops->set_ios(host, ios);
+	DHD_ERROR(("%s: After change: sd drive type is %u\n", __FUNCTION__, ios->drv_type));
 	mmc_host_clk_release(host);
 }
 

@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -23,7 +23,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -106,6 +106,10 @@ extern int dhd_bus_rxctl(struct dhd_bus *bus, uchar *msg, uint msglen);
 /* Watchdog timer function */
 extern bool dhd_bus_watchdog(dhd_pub_t *dhd);
 
+#ifdef OOB_GPIO_TSF_INTR
+extern int dhd_bus_oob_tsf_intr_register(dhd_pub_t *dhdp);
+extern void dhd_bus_oob_tsf_intr_unregister(dhd_pub_t *dhdp);
+#endif /* OOB_GPIO_TSF_INTR */
 extern int dhd_bus_oob_intr_register(dhd_pub_t *dhdp);
 extern void dhd_bus_oob_intr_unregister(dhd_pub_t *dhdp);
 extern void dhd_bus_oob_intr_set(dhd_pub_t *dhdp, bool enable);

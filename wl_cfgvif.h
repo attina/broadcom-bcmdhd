@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -338,6 +338,16 @@ s32 wl_cfgvif_set_bcnprot_mode(struct net_device *ndev,
 void
 wl_cfgvif_delayed_remove_iface_work(struct work_struct *work);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 5, 0))
+extern int wl_chspec_chandef(struct net_device *dev, chanspec_t chanspec,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
+	struct cfg80211_chan_def *chandef,
+#else
+	struct chan_info *chaninfo,
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)) */
+	struct wiphy *wiphy);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 8, 0))) */
 s32 wl_cfgvif_notify_owe_event(struct bcm_cfg80211 *cfg,
 	struct net_device *dev, const wl_event_msg_t *e, void *data);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(WL_MLO_BKPORT)

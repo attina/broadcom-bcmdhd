@@ -1,7 +1,7 @@
 /*
  * Broadcom Dongle Host Driver (DHD), common DHD core.
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -582,7 +582,7 @@ enum {
 #endif /* CSI_SUPPORT */
 #if defined(ARP_CHECK_SUPPORT) && defined(ARP_OFFLOAD_SUPPORT)
 	IOV_GETGWIP_ADDR,
-#endif /* ARP_CHECK_SUPPORT && ARP_OFFLOAD_SUPPORT*/
+#endif /* ARP_CHECK_SUPPORT && ARP_OFFLOAD_SUPPORT */
 	IOV_LAST
 };
 
@@ -1771,6 +1771,24 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 	}
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
+#ifdef WL_NAN
+#ifdef PROP_TXSTATUS_VSDB
+	/* pre enable wlfc before interface create */
+	if (ioc->cmd == WLC_GET_VAR && buf) {
+		char tmp_buf[64];
+		dhd_if_t *ifp = dhd_get_ifp(dhd_pub, ifidx);
+		int minlen = MIN(sizeof(tmp_buf) - 1, strlen(buf));
+		memset(tmp_buf, 0, sizeof(tmp_buf));
+		bcopy(buf, tmp_buf, minlen);
+		tmp_buf[minlen] = '\0';
+
+		if (strcmp("interface_create", tmp_buf) == 0) {
+			wl_cfg80211_set_wlfc(ifp->net, TRUE);
+		}
+	}
+#endif /* PROP_TXSTATUS_VSDB */
+#endif /* WL_NAN */
+
 #ifdef KEEPIF_ON_DEVICE_RESET
 		if (ioc->cmd == WLC_GET_VAR) {
 			dbus_config_t config;
@@ -1964,6 +1982,17 @@ dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 
 		ret = dhd_prot_ioctl(dhd_pub, ifidx, ioc, buf, len);
 
+#ifdef PROP_TXSTATUS_VSDB
+#if defined(WL_TWT) || defined(WL_TWT_HAL_IF)
+		if (ret == BCME_OK && (ioc->cmd == WLC_SET_VAR &&
+				buf != NULL &&
+				strcmp("twt", buf) == 0)) {
+			uint16 *type = (uint16 *)((uint8 *)buf + strlen("twt") + 1);
+			dhd_if_t *ifp = dhd_get_ifp(dhd_pub, ifidx);
+			wl_cfg80211_twt_update(ifp->net, *type);
+		}
+#endif /* WL_TWT_HAL_IF || WL_TWT */
+#endif /* PROP_TXSTATUS_VSDB */
 #ifdef DUMP_IOCTL_IOV_LIST
 		if (ret == -ETIMEDOUT) {
 			DHD_ERROR(("Last %d issued commands: Latest one is at bottom.\n",
@@ -3371,6 +3400,10 @@ dhd_doiovar(dhd_pub_t *dhd_pub, int ifidx, const bcm_iovar_t *vi, uint32 actioni
 		/* wlfc is already set as desired */
 		if (wlfc_enab == (int_val == 0 ? FALSE : TRUE))
 			goto exit;
+
+#ifdef PROP_TXSTATUS_VSDB
+		dhd_pub->proptx_force = int_val;
+#endif /* PROP_TXSTATUS_VSDB */
 
 		if (int_val == TRUE && disable_proptx) {
 			disable_proptx = 0;
@@ -5904,12 +5937,15 @@ wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 			 */
 			if ((status == WLC_E_STATUS_SUCCESS) || (status == WLC_E_STATUS_ABORT)) {
 				/* print critical scan events via DHD_EVENT */
-				DHD_EVENT(("MACEVENT: %s %d, status %d sync-id %u\n",
+				DHD_ERROR(("MACEVENT: %s %d, status %d sync-id %u\n",
 					event_name, event_type, (int)status,
 					dtoh16(escan_result->sync_id)));
-			} else {
-				DHD_EVENT(("MACEVENT: %s %d, MAC %s, status %d \n",
+			} else if (DHD_CTL_ON()) {
+				DHD_CTL(("MACEVENT: %s %d, MAC %s, status %d\n",
 					event_name, event_type, eabuf, (int)status));
+			} else {
+				DHD_ERROR_RLMT(("MACEVENT: %s %d, status %d\n",
+					event_name, event_type, (int)status));
 			}
 #ifdef REPORT_FATAL_TIMEOUTS
 			/* a 'partial' status means the escan is still in progress
@@ -6768,6 +6804,13 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 		dhd_update_interface_flow_info(dhd_pub, ifevent->ifidx,
 			ifevent->opcode, ifevent->role, ifevent->reserved);
 #endif
+
+#ifdef SYNA_FW_PKT_FWD_DISABLED
+		if (ifevent->opcode != WLC_E_IF_DEL) {
+			dhd_set_if_role(dhd_pub, ifevent->ifidx, ifevent->role);
+		}
+#endif /* SYNA_FW_PKT_FWD_DISABLED */
+
 #ifdef PROP_TXSTATUS
 		{
 			uint8 *ea = pvt_data->eth.ether_dhost;
@@ -6978,8 +7021,8 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 		}
 #else
 #ifdef PROP_TXSTATUS
-		/* Link up */
-		if (flags) {
+		/* clean in link down */
+		if (!flags) {
 			struct wl_event_data_if *ifevent = (struct wl_event_data_if *)event_data;
 			uint8* ea = pvt_data->eth.ether_dhost;
 			uint8 ifindex = (uint8)dhd_ifname2idx(dhd_pub->info, event->ifname);

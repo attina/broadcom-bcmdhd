@@ -1,7 +1,7 @@
 /*
  * Debug/trace/assert driver definitions for Dongle Host Driver.
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -459,9 +459,16 @@ do { \
 		if (dhd_msg_level & DHD_MSGTRACE_VAL) \
 			printf args; \
 	} while (0)
-#define DHD_ERROR_MEM(args)	DHD_ERROR(args)
+#define DHD_ERROR_MEM(args) \
+do {	\
+	if (dhd_msg_level & DHD_ERROR_VAL) {	\
+		if (dhd_msg_level & DHD_ERROR_MEM_VAL) {	\
+			printf args; \
+		}	\
+	}	\
+} while (0)
 #define DHD_IOVAR_MEM(args)	DHD_ERROR(args)
-#define DHD_LOG_MEM(args)	DHD_ERROR(args)
+#define DHD_LOG_MEM(args)	DHD_ERROR_MEM(args)
 #define DHD_EVENT(args)		do { \
 		if (dhd_msg_level & DHD_EVENT_VAL) \
 			printf args; \
@@ -797,7 +804,7 @@ do {	\
 #endif /* defined(BCMDBG) || defined(DHD_DEBUG) */
 
 #define PRINT_RATE_LIMIT_PERIOD 5000000u /* 5s in units of us */
-#define DHD_ERROR_RLMT(args) \
+#define DHD_ERROR_RLMT_MSG(x, args...) \
 do {	\
 	if (dhd_msg_level & DHD_ERROR_VAL) {	\
 		static uint64 __err_ts; \
@@ -807,14 +814,14 @@ do {	\
 		if (__err_ts == 0 || (__cur_ts > __err_ts && \
 		(__cur_ts - __err_ts > PRINT_RATE_LIMIT_PERIOD))) { \
 			__err_ts = __cur_ts; \
-			DHD_ERROR(args);	\
-			DHD_ERROR(("[Repeats %u times]\n", __err_cnt)); \
+			DHD_ERROR(("[Repeats %u times last time] " x, __err_cnt, ## args)); \
 			__err_cnt = 0; \
 		} else { \
 			++__err_cnt; \
 		} \
 	}	\
 } while (0)
+#define DHD_ERROR_RLMT(x) DHD_ERROR_RLMT_MSG x
 
 /* even in non-BCMDBG builds, logging of dongle iovars should be available */
 #define DHD_DNGL_IOVAR_SET(args) do { \

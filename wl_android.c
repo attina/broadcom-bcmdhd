@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Android related functions
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -7872,6 +7872,16 @@ wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 		goto done2;
 	}
 
+#ifdef WL_ESCAN
+	chosen = wl_ext_autochannel(dev, ACS_DRV_BIT, band, NULL);
+	channel = wf_chspec_ctlchan(chosen);
+	if (channel) {
+		acs_band = CHSPEC_BAND(chosen);
+		goto done2;
+	} else
+		goto done;
+#endif /* WL_ESCAN */
+
 	/* If AP is started on wlan0 iface,
 	 * do not issue any iovar to fw and choose default ACS channel for softap
 	 */
@@ -14581,6 +14591,10 @@ struct net_device *
 wl_cfg80211_register_static_if(struct bcm_cfg80211 *cfg, u16 iftype, char *ifname,
 	int static_ifidx)
 {
+#ifdef CUSTOM_MULTI_MAC
+	dhd_pub_t *dhd = cfg->pub;
+	char hw_ether[62];
+#endif /* CUSTOM_MULTI_MAC */
 	struct net_device *ndev;
 	struct wireless_dev *wdev = NULL;
 	struct net_device *primary_ndev;
@@ -14600,12 +14614,19 @@ wl_cfg80211_register_static_if(struct bcm_cfg80211 *cfg, u16 iftype, char *ifnam
 #ifdef DHD_USE_RANDMAC
 	wl_cfg80211_generate_mac_addr(&ea_addr);
 #else
-	/* Use primary mac with locally admin bit set */
-	eacopy(primary_ndev->dev_addr, ea_addr.octet);
-	ea_addr.octet[0] |= 0x02;
+#ifdef CUSTOM_MULTI_MAC
+	if (!wifi_platform_get_mac_addr(dhd->adapter, hw_ether, static_ifidx+1)) {
+		(void)memcpy_s(&ea_addr, ETH_ALEN, hw_ether, ETH_ALEN);
+	} else
+#endif /* CUSTOM_MULTI_MAC */
+	{
+		/* Use primary mac with locally admin bit set */
+		eacopy(primary_ndev->dev_addr, ea_addr.octet);
+		ea_addr.octet[0] |= 0x02;
 #ifdef SPECIFIC_MAC_GEN_SCHEME
-	wl_ext_get_vif_macaddr(primary_ndev, WL_IF_TYPE_AP, static_ifidx, (u8*)&ea_addr);
+		wl_ext_get_vif_macaddr(primary_ndev, WL_IF_TYPE_AP, static_ifidx, (u8*)&ea_addr);
 #endif /* SPECIFIC_MAC_GEN_SCHEME */
+	}
 #endif /* DHD_USE_RANDMAC */
 
 	ndev = dhd_allocate_static_if(cfg->pub, ifname, ea_addr.octet, NULL, FALSE);
@@ -16453,23 +16474,27 @@ s32
 wl_android_set_blacklist_bssid(struct net_device *dev, maclist_t *blacklist,
     uint32 len, uint32 flush)
 {
-	s32 err;
+	s32 err, i;
 	s32 macmode;
 
+	/* By default programming blacklist flushes out old values */
+	macmode = (flush && !blacklist) ? WLC_MACMODE_DISABLED : WLC_MACMODE_DENY;
+
 	if (blacklist) {
+		WL_MSG(dev->name, "macmode=%d, cnt=%d\n", macmode, blacklist->count);
+		for (i = 0; i < blacklist->count; i++)
+			WL_MSG(dev->name, "[%pM]\n", &blacklist->ea[i]);
 		err = wldev_ioctl_set(dev, WLC_SET_MACLIST, (u8 *)blacklist, len);
 		if (err != BCME_OK) {
 			WL_ERR(("WLC_SET_MACLIST failed %d\n", err));
 			return err;
 		}
+	} else {
+		WL_MSG(dev->name, "macmode=%d\n", macmode);
 	}
-	/* By default programming blacklist flushes out old values */
-	macmode = (flush && !blacklist) ? WLC_MACMODE_DISABLED : WLC_MACMODE_DENY;
 	err = wldev_ioctl_set(dev, WLC_SET_MACMODE, (u8 *)&macmode, sizeof(macmode));
 	if (err != BCME_OK) {
 		WL_ERR(("WLC_SET_MACMODE %d failed %d\n", macmode, err));
-	} else {
-		WL_INFORM_MEM(("WLC_SET_MACMODE %d applied\n", macmode));
 	}
 	return err;
 }

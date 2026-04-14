@@ -9,6 +9,15 @@ typedef enum IFMODE {
 	IMESH_MODE
 } ifmode_t;
 
+#define STA_CONNECT_TIMEOUT	10500
+
+typedef enum WL_ESCAN_TYPE {
+	SCAN_NONE = 0,
+	SCAN_RCC = 1,
+	SCAN_ERCC = 2,
+	SCAN_FULLCHAN = 3
+} wl_escan_type_t;
+
 enum wl_ext_status {
 	WL_EXT_STATUS_PRE_DISCONNECTING = 0,
 	WL_EXT_STATUS_DISCONNECTING = 1,
@@ -17,17 +26,33 @@ enum wl_ext_status {
 	WL_EXT_STATUS_SCANNING = 4,
 	WL_EXT_STATUS_SCAN_COMPLETE = 5,
 	WL_EXT_STATUS_CONNECTING = 6,
-	WL_EXT_STATUS_RECONNECT = 7,
-	WL_EXT_STATUS_CONNECTED = 8,
-	WL_EXT_STATUS_ROAMED = 9,
-	WL_EXT_STATUS_ADD_KEY = 10,
-	WL_EXT_STATUS_AP_ENABLING = 11,
-	WL_EXT_STATUS_AP_ENABLED = 12,
-	WL_EXT_STATUS_DELETE_STA = 13,
-	WL_EXT_STATUS_STA_DISCONNECTED = 14,
-	WL_EXT_STATUS_STA_CONNECTED = 15,
-	WL_EXT_STATUS_AP_DISABLING = 16,
-	WL_EXT_STATUS_AP_DISABLED = 17
+	WL_EXT_STATUS_RECONNECTING = 7,
+	WL_EXT_STATUS_RECONNECT = 8,
+	WL_EXT_STATUS_CONNECTED = 9,
+	WL_EXT_STATUS_ROAMED = 10,
+	WL_EXT_STATUS_ADD_KEY = 11,
+	WL_EXT_STATUS_AP_ENABLING = 12,
+	WL_EXT_STATUS_AP_ENABLED = 13,
+	WL_EXT_STATUS_DELETE_STA = 14,
+	WL_EXT_STATUS_STA_DISCONNECTED = 15,
+	WL_EXT_STATUS_STA_CONNECTED = 16,
+	WL_EXT_STATUS_AP_DISABLING = 17,
+	WL_EXT_STATUS_AP_DISABLED = 18
+};
+
+enum wifi_isam_reason {
+	ISAM_RC_MESH_ACS = 1,
+	ISAM_RC_TPUT_MONITOR = 2,
+	ISAM_RC_AP_ACS = 3,
+	ISAM_RC_AP_RESTART = 4,
+	ISAM_RC_AP_RESET = 5,
+	ISAM_RC_EAPOL_RESEND = 6,
+	ISAM_RC_KEY_INSTALL = 7,
+	ISAM_RC_RXF0OVFL_REINIT = 8,
+	ISAM_RC_RESET_ITF = 9,
+	ISAM_RC_ARP_DETECTION = 10,
+	ISAM_RC_REASSOC_SCAN = 11,
+	ISAM_RC_REASSOC = 12
 };
 
 extern int op_mode;
@@ -36,8 +61,11 @@ void wl_ext_update_conn_state(dhd_pub_t *dhd, int ifidx, uint conn_state);
 void wl_ext_backup_eapol_txpkt(dhd_pub_t *dhd, int ifidx, void *pkt);
 void wl_ext_release_eapol_txpkt(dhd_pub_t *dhd, int ifidx, bool rx);
 #endif /* EAPOL_RESEND */
+#ifdef EAP_FAILURE_REASSOC
+bool wl_ext_eap_fail_reassoc(dhd_pub_t *dhd, int ifidx, uint8 *pktdata, uint32 pktlen);
+#endif /* EAP_FAILURE_REASSOC */
 #ifdef ARP_DETECTION
-int wl_ext_arp_receive(dhd_pub_t *dhd, int ifidx);
+int wl_ext_arp_receive(dhd_pub_t *dhd, int ifidx, uint8 *pktdata, uint32 pktlen);
 void wl_ext_trigger_arp(struct net_device *dev);
 #endif /* ARP_DETECTION */
 #ifdef WLDWDS
@@ -64,6 +92,9 @@ void wl_ext_add_remove_pm_enable_work(struct net_device *dev, bool add);
 bool wl_ext_iapsta_other_if_associated(struct net_device *net);
 bool wl_ext_sta_connecting(struct net_device *dev);
 bool wl_ext_sta_connected(struct net_device *dev);
+bool wl_ext_associated(struct net_device *dev, struct ether_addr *bssid);
+struct net_device * wl_ext_max_prio_enabled_if(struct net_device *dev);
+u32 wl_ext_get_chanspec(struct net_device *dev, struct wl_ext_chan_info *chan_info);
 void wl_ext_get_chan_str(struct net_device *dev, char *chan_str, int total_len);
 #ifdef DHD_LOSSLESS_ROAMING
 int wl_ext_any_sta_handshaking(struct dhd_pub *dhd);
@@ -92,6 +123,12 @@ void wl_ext_set_wiphy_update(struct net_device *dev, bool set);
 bool wl_ext_get_wiphy_update(struct net_device *dev);
 #endif /* WL_PASSIVE_CHAN_UPDATE */
 void wl_ext_iapsta_csa_event(struct net_device *dev);
+#ifdef WL_EXT_REASSOC
+void wl_cfgext_trigger_reassoc_scan(struct net_device *dev,
+	struct ether_addr *dirty_bssid, int scan_type, int conn_tmo);
+void wl_cfgext_event_handler(struct net_device *dev, const wl_event_msg_t *e,
+	void *data);
+#endif /* WL_EXT_REASSOC */
 void wl_ext_iapsta_ifadding(struct net_device *net, int ifidx);
 #ifdef WLMESH_CFG80211
 bool wl_ext_iapsta_mesh_creating(struct net_device *net);
@@ -115,4 +152,7 @@ void wl_ext_reset_scan_busy(dhd_pub_t *dhd);
 #ifdef PROPTX_MAXCOUNT
 int wl_ext_get_wlfc_maxcount(struct dhd_pub *dhd, int ifidx);
 #endif /* PROPTX_MAXCOUNT */
+#if defined(WL_CFG80211) && defined(WL_ROAM_PMK_WAR)
+void wl_ext_pmk_set(struct net_device *dev, wsec_pmk_t *pmk, bool set);
+#endif /* WL_CFG80211 && WL_ROAM_PMK_WAR */
 #endif

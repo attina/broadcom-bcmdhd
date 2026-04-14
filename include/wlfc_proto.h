@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -18,7 +18,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -282,6 +282,7 @@ typedef enum {
 	WL_TXSTATUS_HSLOT_MASK)
 
 #define WL_TXSTATUS_FREERUNCTR_MASK		0xffu /* allow 8 bits */
+#define WL_TXSTATUS_FREERUNCTR_MAXNUM		0xffu
 
 #define WL_TXSTATUS_SET_FREERUNCTR(x, ctr)	((x)  = \
 	((x) & ~(WL_TXSTATUS_FREERUNCTR_MASK)) | \

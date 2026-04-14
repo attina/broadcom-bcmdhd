@@ -3,7 +3,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -22,7 +22,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -70,6 +70,7 @@
 #include <pcie_core.h>
 #include <bcmpcie.h>
 #include <dhd_pcie.h>
+#include <dhd_config.h>
 #include <dhd_plat.h>
 #ifdef DHD_MAP_PKTID_LOGGING
 #include <dhd_log_dump.h>
@@ -5582,6 +5583,19 @@ int dhd_sync_with_dongle(dhd_pub_t *dhd)
 		}
 	}
 
+	if (dhd->conf->rxbufpost_sz) {
+		prot->rxbufpost_sz = min(dhd->conf->rxbufpost_sz, (uint)prot->rxbufpost_sz);
+	} else {
+		/* Rx tput is bad on specific platform after fw build -monitor due to rxbufpost_sz changed from 2048
+		* to 4096, so we set it to default DHD_FLOWRING_RX_BUFPOST_PKTSZ(2048) to fix this issue.
+		*/
+#ifdef WL_MONITOR
+		if (!dhd->monitor_enable)
+			prot->rxbufpost_sz = min((uint)DHD_FLOWRING_RX_BUFPOST_PKTSZ, (uint)prot->rxbufpost_sz);
+#else
+		prot->rxbufpost_sz = min((uint)DHD_FLOWRING_RX_BUFPOST_PKTSZ, (uint)prot->rxbufpost_sz);
+#endif /* WL_MONITOR */
+	}
 	prot->rxbufpost_alloc_sz = dhd_plat_align_rxbuf_size(prot->rxbufpost_sz);
 	DHD_PRINT(("%s: RxBuf Post Alloc : %d\n", __FUNCTION__, prot->rxbufpost_alloc_sz));
 
@@ -9648,6 +9662,9 @@ BCMFASTPATH(dhd_prot_txdata)(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 			}
 		}
 
+#ifdef DHD_WFB
+	txdesc->flags |= BCMPCIE_TXPOST_FLAGS_HOST_SFH_LLC;
+#else
 #ifdef HOST_SFH_LLC
 	if (host_sfh_llc_reqd) {
 		if (dhd_ether_to_8023_hdr(dhd->osh, (struct ether_header *)pktdata,
@@ -9666,6 +9683,7 @@ BCMFASTPATH(dhd_prot_txdata)(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 		pktlen = PKTLEN(dhd->osh, PKTBUF) - ETHER_HDR_LEN;
 		pktdata = PKTPULL(dhd->osh, PKTBUF, ETHER_HDR_LEN);
 	}
+#endif /* DHD_WFB */
 
 	/* Map the data pointer to a DMA-able address */
 	pa = DMA_MAP(dhd->osh, PKTDATA(dhd->osh, PKTBUF), pktlen, DMA_TX, PKTBUF, 0);
@@ -11156,6 +11174,14 @@ dhd_msgbuf_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len,
 			goto done;
 		}
 	}
+#if defined(OOB_GPIO_TSF_INTR) || defined(OOB_TSF_INTR)
+	if (cmd == WLC_GET_VAR && buf) {
+		if (!strcmp((char *)buf, "gettsf")) {
+			dhd->tsf_host_ns = 0;
+			dhd->tsf_intr_state = TSF_INTR_PREPARE;
+		}
+	}
+#endif /* OOB_GPIO_TSF_INTR || OOB_TSF_INTR */
 
 	DHD_CTL(("query_ioctl: ACTION %d ifdix %d cmd %d len %d \n",
 	    action, ifidx, cmd, len));

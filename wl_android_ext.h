@@ -52,6 +52,10 @@ int wl_ext_add_del_ie(struct net_device *dev, uint pktflag, char *ie_data,
 	const char* add_del_cmd);
 int wl_construct_ctl_chanspec_list(struct net_device *dev,
 	wl_uint32_list_t *chan_list, wl_chan_type_t *chan_type);
+#ifdef DOT1AS_TIMESYNC
+int wl_ext_get_tsf(struct net_device *dev, char *cmd, char *data,
+	char *command, int total_len);
+#endif /* DOT1AS_TIMESYNC */
 #ifdef WL_EXT_GENL
 int wl_ext_genl_init(struct net_device *net);
 void wl_ext_genl_deinit(struct net_device *net);
@@ -78,6 +82,7 @@ chanspec_t wl_ext_chspec_driver_to_host(struct dhd_pub *dhd, chanspec_t chanspec
 chanspec_t wl_ext_chspec_host_to_driver(struct dhd_pub *dhd, chanspec_t chanspec);
 bool wl_ext_dfs_chan(u32 chanspec);
 bool wl_ext_passive_chan(struct net_device *dev, u32 chanspec);
+uint32 wl_ext_candidate_chanspec(struct net_device *dev, chanspec_t *chanspecs, int chan_cnt);
 void wl_ext_get_default_chan(struct net_device *dev,
 	uint16 *chan_2g, uint16 *chan_5g, uint16 *chan_6g);
 int wl_ext_set_chanspec(struct net_device *dev, struct wl_ext_chan_info *chan_info,
@@ -213,6 +218,7 @@ int wl_ext_get_best_channel(struct net_device *net,
 	(band == WLC_BAND_2G) ? "2g" : \
 	(band == WLC_BAND_5G) ? "5g" : \
 	(band == WLC_BAND_6G) ? "6g" : \
+	(band == (WLC_BAND_5G|WLC_BAND_6G)) ? "5g/6g" : \
 	(band == WLC_BAND_ALL) ? "all" : \
 	(band == WLC_BAND_AUTO) ? "auto" : "?g")
 

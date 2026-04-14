@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD),
  * Linux-specific network interface for transmit(tx) path
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -348,6 +348,9 @@ BCMFASTPATH(__dhd_sendpkt)(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 			wl_handle_wps_states(dhd_idx2net(dhdp, ifidx),
 				pktdata, PKTLEN(dhdp->osh, pktbuf), TRUE);
 #endif /* WL_CFG80211 && WL_WPS_SYNC */
+#ifdef EAPOL_RESEND
+			wl_ext_backup_eapol_txpkt(dhdp, ifidx, pktbuf);
+#endif /* EAPOL_RESEND */
 		} else if (dhd_low_latency &&
 			ntoh16(eh->ether_type) == ETHER_TYPE_ARP) {
 				PKTSETPRIO(pktbuf, PRIO_8021D_VO);
@@ -780,8 +783,10 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 		return NETDEV_TX_BUSY;
 	}
 
+#ifndef DHD_WFB
 	ASSERT(ifidx == dhd_net2idx(dhd, net));
 	ASSERT((ifp != NULL) && ((ifidx < DHD_MAX_IFS) && (ifp == dhd->iflist[ifidx])));
+#endif /* !DHD_WFB */
 
 	bcm_object_trace_opr(skb, BCM_OBJDBG_ADD_PKT, __FUNCTION__, __LINE__);
 
@@ -957,11 +962,10 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 #endif /* DHD_PSTA */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0) && defined(DHD_TCP_PACING_SHIFT)
-#ifndef DHD_DEFAULT_TCP_PACING_SHIFT
-#define DHD_DEFAULT_TCP_PACING_SHIFT 7
-#endif /* DHD_DEFAULT_TCP_PACING_SHIFT */
-	if (skb->sk) {
-		sk_pacing_shift_update(skb->sk, DHD_DEFAULT_TCP_PACING_SHIFT);
+	if (dhd->pub.conf->tcp_pacing_shift && skb->sk) {
+		sk_pacing_shift_update(skb->sk, dhd->pub.conf->tcp_pacing_shift);
+	} else {
+		skb_orphan(skb);
 	}
 #else
 #if defined(BCMPCIE) && defined(DHD_VSDB_SKIP_ORPHAN) && defined(WL_CFG80211)
@@ -972,7 +976,9 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 
 #ifdef DHDTCPSYNC_FLOOD_BLK
 	if (dhd_tcpdata_get_flag(&dhd->pub, pktbuf) == FLAG_SYNCACK) {
-		ifp->tsyncack_txed++;
+		if(ifp) {
+			ifp->tsyncack_txed++;
+		}
 	}
 #endif /* DHDTCPSYNC_FLOOD_BLK */
 
@@ -1006,7 +1012,9 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 done:
 	DHD_GENERAL_LOCK(&dhd->pub, flags);
 	DHD_BUS_BUSY_CLEAR_IN_TX(&dhd->pub);
-	DHD_IF_CLR_TX_ACTIVE(ifp, DHD_TX_START_XMIT);
+	if(ifp) {
+		DHD_IF_CLR_TX_ACTIVE(ifp, DHD_TX_START_XMIT);
+	}
 	dhd_os_tx_completion_wake(&dhd->pub);
 	dhd_os_busbusy_wake(&dhd->pub);
 	DHD_GENERAL_UNLOCK(&dhd->pub, flags);

@@ -1,7 +1,7 @@
 /*
  * Linux DHD Bus Module for PCIE
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -158,6 +158,9 @@ typedef struct dhdpcie_info {
 #ifdef BCMPCIE_OOB_HOST_WAKE
 	void *os_cxt;			/* Pointer to per-OS private data */
 #endif /* BCMPCIE_OOB_HOST_WAKE */
+#ifdef OOB_GPIO_TSF_INTR
+	void *tsf_os_cxt;
+#endif /* OOB_GPIO_TSF_INTR */
 #ifdef DHD_WAKE_STATUS
 	spinlock_t	pkt_wake_lock;
 	unsigned int	total_wake_count;
@@ -180,7 +183,7 @@ struct pcos_info {
 	struct tasklet_struct tuning_tasklet;
 };
 
-#ifdef BCMPCIE_OOB_HOST_WAKE
+#if defined(BCMPCIE_OOB_HOST_WAKE) || defined(OOB_GPIO_TSF_INTR)
 typedef struct dhdpcie_os_info {
 	int			oob_irq_num;	/* valid when hardware or software oob in use */
 	unsigned long		oob_irq_flags;	/* valid when hardware or software oob in use */
@@ -197,7 +200,7 @@ static irqreturn_t wlan_oob_irq(int irq, void *data);
 extern struct brcm_pcie_wake brcm_pcie_wake;
 #endif /* CUSTOMER_HW2 */
 
-#endif /* BCMPCIE_OOB_HOST_WAKE */
+#endif /* BCMPCIE_OOB_HOST_WAKE || OOB_GPIO_TSF_INTR */
 
 #ifdef USE_SMMU_ARCH_MSM
 typedef struct dhdpcie_smmu_info {
@@ -1522,10 +1525,10 @@ static int dhdpcie_device_scan(struct device *dev, void *data)
 	if ((pcidev->vendor != VENDOR_BROADCOM) && (pcidev->vendor != VENDOR_SYNAPTICS))
 		return 0;
 
-	DHD_INFO(("Found Broadcom or Synaptics PCI device 0x%04x\n", pcidev->device));
+	DHD_INFO(("Found Synaptics or Broadcom PCI device 0x%04x\n", pcidev->device));
 	*cnt += 1;
 	if (pcidev->driver && strcmp(pcidev->driver->name, dhdpcie_driver.name))
-		DHD_PRINT(("Broadcom or Synaptics PCI Device 0x%04x has allocated with driver %s\n",
+		DHD_PRINT(("Synaptics or Broadcom PCI Device 0x%04x has allocated with driver %s\n",
 			pcidev->device, pcidev->driver->name));
 
 	return 0;
@@ -1540,7 +1543,7 @@ dhdpcie_bus_register(void)
 	if (!error) {
 		bus_for_each_dev(dhdpcie_driver.driver.bus, NULL, &error, dhdpcie_device_scan);
 		if (!error) {
-			DHD_ERROR(("No Broadcom or Synaptics PCI device enumerated!\n"));
+			DHD_ERROR(("Synaptics or Broadcom PCI device enumerated!\n"));
 		} else if (!dhdpcie_init_succeeded) {
 			DHD_ERROR(("%s: dhdpcie initialize failed.\n", __FUNCTION__));
 		} else {
@@ -1688,6 +1691,9 @@ dhdpcie_pci_stop(struct pci_dev *pdev)
 	/* pcie os info detach */
 	MFREE(osh, pch->os_cxt, sizeof(dhdpcie_os_info_t));
 #endif /* BCMPCIE_OOB_HOST_WAKE */
+#ifdef OOB_GPIO_TSF_INTR
+	MFREE(osh, pch->tsf_os_cxt, sizeof(dhdpcie_os_info_t));
+#endif /* OOB_GPIO_TSF_INTR */
 #ifdef USE_SMMU_ARCH_MSM
 	/* smmu info detach */
 	dhdpcie_smmu_remove(pdev, pch->smmu_cxt);
@@ -2068,6 +2074,9 @@ int dhdpcie_init(struct pci_dev *pdev)
 #ifdef BCMPCIE_OOB_HOST_WAKE
 	dhdpcie_os_info_t	*dhdpcie_osinfo = NULL;
 #endif /* BCMPCIE_OOB_HOST_WAKE */
+#ifdef OOB_GPIO_TSF_INTR
+	dhdpcie_os_info_t	*dhdpcie_tsf_osinfo = NULL;
+#endif /* OOB_GPIO_TSF_INTR */
 #ifdef USE_SMMU_ARCH_MSM
 	dhdpcie_smmu_info_t	*dhdpcie_smmu_info = NULL;
 #endif /* USE_SMMU_ARCH_MSM */
@@ -2130,6 +2139,24 @@ int dhdpcie_init(struct pci_dev *pdev)
 		}
 		dhdpcie_osinfo->adapter = adapter;
 #endif /* BCMPCIE_OOB_HOST_WAKE */
+
+#ifdef OOB_GPIO_TSF_INTR
+		dhdpcie_tsf_osinfo = MALLOC(osh, sizeof(dhdpcie_os_info_t));
+		if (dhdpcie_tsf_osinfo == NULL) {
+			DHD_ERROR(("%s: MALLOC of dhdpcie_os_info_t failed\n",
+				__FUNCTION__));
+			break;
+		}
+		bzero(dhdpcie_tsf_osinfo, sizeof(dhdpcie_os_info_t));
+		dhdpcie_info->tsf_os_cxt = (void *)dhdpcie_tsf_osinfo;
+
+		dhdpcie_tsf_osinfo->oob_irq_num = adapter->tsf_irq_num;
+		dhdpcie_tsf_osinfo->oob_irq_flags = adapter->tsf_intr_flags;
+		if (dhdpcie_tsf_osinfo->oob_irq_num < 0) {
+			DHD_ERROR(("%s: Host OOB TSF irq is not defined\n", __FUNCTION__));
+		}
+		dhdpcie_tsf_osinfo->adapter = adapter;
+#endif /* OOB_GPIO_TSF_INTR */
 
 #ifdef USE_SMMU_ARCH_MSM
 		/* allocate private structure for using SMMU */
@@ -2208,8 +2235,11 @@ int dhdpcie_init(struct pci_dev *pdev)
 		if (bus->dev->bus) {
 			/* self member of structure pci_bus is bridge device as seen by parent */
 			bus->rc_dev = bus->dev->bus->self;
-			DHD_PRINT(("%s: rc_dev from dev->bus->self (%x:%x) is %pK\n", __FUNCTION__,
-				bus->rc_dev->vendor, bus->rc_dev->device, bus->rc_dev));
+			if (bus->rc_dev)
+				DHD_PRINT(("%s: rc_dev from dev->bus->self (%x:%x) is %pK\n", __FUNCTION__,
+					bus->rc_dev->vendor, bus->rc_dev->device, bus->rc_dev));
+			else
+				DHD_PRINT(("%s: bus->dev->bus->self is NULL\n", __FUNCTION__));
 		} else {
 			DHD_ERROR(("%s: unable to get rc_dev as dev->bus is NULL\n", __FUNCTION__));
 		}
@@ -2338,6 +2368,11 @@ int dhdpcie_init(struct pci_dev *pdev)
 		MFREE(osh, dhdpcie_osinfo, sizeof(dhdpcie_os_info_t));
 	}
 #endif /* BCMPCIE_OOB_HOST_WAKE */
+#ifdef OOB_GPIO_TSF_INTR
+	if (dhdpcie_tsf_osinfo) {
+		MFREE(osh, dhdpcie_tsf_osinfo, sizeof(dhdpcie_os_info_t));
+	}
+#endif /* OOB_GPIO_TSF_INTR */
 
 #ifdef USE_SMMU_ARCH_MSM
 	if (dhdpcie_smmu_info) {
@@ -2822,6 +2857,111 @@ dhdpcie_bus_request_irq(struct dhd_bus *bus)
 	return ret;
 }
 
+#ifdef OOB_GPIO_TSF_INTR
+static irqreturn_t wlan_oob_tsf_irq(int irq, void *data)
+{
+	dhd_bus_t *bus = (dhd_bus_t *)data;
+	if (bus->dhd->tsf_intr_state == TSF_INTR_CLEAR) {
+		bus->dhd->tsf_host_ns = ktime_get_ns();
+		bus->dhd->tsf_intr_state = TSF_INTR_UPDATED;
+	}
+	return IRQ_HANDLED;
+}
+
+int dhdpcie_oob_tsf_intr_register(dhd_bus_t *bus)
+{
+	int err = 0;
+	dhdpcie_info_t *pch;
+	dhdpcie_os_info_t *dhdpcie_osinfo;
+
+	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
+	if (bus == NULL) {
+		DHD_ERROR(("%s: bus is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	if (bus->dev == NULL) {
+		DHD_ERROR(("%s: bus->dev is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	pch = pci_get_drvdata(bus->dev);
+	if (pch == NULL) {
+		DHD_ERROR(("%s: pch is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	dhdpcie_osinfo = (dhdpcie_os_info_t *)pch->tsf_os_cxt;
+	if (dhdpcie_osinfo->oob_irq_registered) {
+		DHD_ERROR(("%s: irq is already registered\n", __FUNCTION__));
+		return -EBUSY;
+	}
+
+	if (dhdpcie_osinfo->oob_irq_num > 0) {
+		printf("%s OOB TSF irq=%d flags=0x%X\n", __FUNCTION__,
+			(int)dhdpcie_osinfo->oob_irq_num,
+			(int)dhdpcie_osinfo->oob_irq_flags);
+		err = request_irq(dhdpcie_osinfo->oob_irq_num, wlan_oob_tsf_irq,
+			dhdpcie_osinfo->oob_irq_flags, "dhdpcie_tsf"ADAPTER_IDX_STR,
+			bus);
+		if (err) {
+			DHD_ERROR(("%s: request_irq failed with %d\n",
+				__FUNCTION__, err));
+			return err;
+		}
+		dhdpcie_osinfo->oob_irq_enabled = TRUE;
+	}
+
+	dhdpcie_osinfo->oob_irq_registered = TRUE;
+
+	return 0;
+}
+
+void dhdpcie_oob_tsf_intr_unregister(dhd_bus_t *bus)
+{
+	int err = 0;
+	dhdpcie_info_t *pch;
+	dhdpcie_os_info_t *dhdpcie_osinfo;
+
+	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
+	if (bus == NULL) {
+		DHD_ERROR(("%s: bus is NULL\n", __FUNCTION__));
+		return;
+	}
+
+	if (bus->dev == NULL) {
+		DHD_ERROR(("%s: bus->dev is NULL\n", __FUNCTION__));
+		return;
+	}
+
+	pch = pci_get_drvdata(bus->dev);
+	if (pch == NULL) {
+		DHD_ERROR(("%s: pch is NULL\n", __FUNCTION__));
+		return;
+	}
+
+	dhdpcie_osinfo = (dhdpcie_os_info_t *)pch->tsf_os_cxt;
+	if (!dhdpcie_osinfo->oob_irq_registered) {
+		DHD_ERROR(("%s: irq is not registered\n", __FUNCTION__));
+		return;
+	}
+	if (dhdpcie_osinfo->oob_irq_num > 0) {
+		if (dhdpcie_osinfo->oob_irq_wake_enabled) {
+			err = disable_irq_wake(dhdpcie_osinfo->oob_irq_num);
+			if (!err) {
+				dhdpcie_osinfo->oob_irq_wake_enabled = FALSE;
+			}
+		}
+		if (dhdpcie_osinfo->oob_irq_enabled) {
+			disable_irq(dhdpcie_osinfo->oob_irq_num);
+			dhdpcie_osinfo->oob_irq_enabled = FALSE;
+		}
+		free_irq(dhdpcie_osinfo->oob_irq_num, bus);
+	}
+	dhdpcie_osinfo->oob_irq_registered = FALSE;
+}
+#endif /* OOB_GPIO_TSF_INTR */
+
 #ifdef BCMPCIE_OOB_HOST_WAKE
 #ifdef CONFIG_BCMDHD_GET_OOB_STATE
 extern int dhd_get_wlan_oob_gpio(void);
@@ -2970,6 +3110,12 @@ void dhdpcie_oob_intr_set(dhd_bus_t *bus, bool enable)
 static irqreturn_t wlan_oob_irq_isr(int irq, void *data)
 {
 	dhd_bus_t *bus = (dhd_bus_t *)data;
+#ifdef OOB_TSF_INTR
+	if (bus->dhd->tsf_intr_state == TSF_INTR_CLEAR) {
+		bus->dhd->tsf_host_ns = ktime_get_ns();
+		bus->dhd->tsf_intr_state = TSF_INTR_UPDATED;
+	}
+#endif /* OOB_TSF_INTR */
 	dhdpcie_oob_intr_set(bus, FALSE);
 	DHD_INTR(("%s: IRQ ISR\n", __FUNCTION__));
 	bus->last_oob_irq_isr_time = OSL_LOCALTIME_NS();
@@ -2985,6 +3131,12 @@ static irqreturn_t wlan_oob_irq(int irq, void *data)
 	DHD_INTR(("%s: IRQ Thread\n", __FUNCTION__));
 	bus->last_oob_irq_thr_time = OSL_LOCALTIME_NS();
 #else
+#ifdef OOB_TSF_INTR
+	if (bus->dhd->tsf_intr_state == TSF_INTR_CLEAR) {
+		bus->dhd->tsf_host_ns = ktime_get_ns();
+		bus->dhd->tsf_intr_state = TSF_INTR_UPDATED;
+	}
+#endif /* OOB_TSF_INTR */
 	dhdpcie_oob_intr_set(bus, FALSE);
 	DHD_INTR(("%s: IRQ ISR\n", __FUNCTION__));
 	bus->last_oob_irq_isr_time = OSL_LOCALTIME_NS();

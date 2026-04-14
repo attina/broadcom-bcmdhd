@@ -1,7 +1,7 @@
 /*
  * BCMSDH Function Driver for the native SDIO/MMC driver in the Linux Kernel
  *
- * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2026 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2025, Broadcom.
+ * Copyright (C) 2026, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -94,6 +94,7 @@ extern volatile bool dhd_mmc_suspend;
 
 static int sdioh_probe(struct sdio_func *func)
 {
+	struct mmc_host *sdio_host = func->card->host;
 	int host_idx = func->card->host->index;
 	uint32 rca = func->card->rca;
 	wifi_adapter_info_t *adapter;
@@ -135,16 +136,16 @@ static int sdioh_probe(struct sdio_func *func)
 #ifdef OOB_INTR_ACTIVE_LOW
 	sdioh->adapter = adapter;
 #endif /* OOB_INTR_ACTIVE_LOW */
-	if (!(func->card->host->caps & MMC_CAP_NONREMOVABLE)) {
+	if (!(sdio_host->caps & MMC_CAP_NONREMOVABLE)) {
 #ifdef SDIO_DETECT_CHANGE
-		func->card->host->caps |= MMC_CAP_NONREMOVABLE;
+		sdio_host->caps |= MMC_CAP_NONREMOVABLE;
 #else
 		sd_err(("%s: MMC_CAP_NONREMOVABLE not enabled in SDIO driver\n", __FUNCTION__));
 #endif /* SDIO_DETECT_CHANGE */
 	}
-	if ((func->card->host->caps & MMC_CAP_NEEDS_POLL)) {
+	if ((sdio_host->caps & MMC_CAP_NEEDS_POLL)) {
 #ifdef SDIO_DETECT_CHANGE
-		func->card->host->caps &= ~MMC_CAP_NEEDS_POLL;
+		sdio_host->caps &= ~MMC_CAP_NEEDS_POLL;
 #else
 		sd_err(("%s: MMC_CAP_NEEDS_POLL enabled in SDIO driver\n", __FUNCTION__));
 #endif /* SDIO_DETECT_CHANGE */
@@ -164,9 +165,10 @@ fail:
 	if (osh != NULL)
 		osl_detach(osh);
 #ifdef SDIO_DETECT_CHANGE
-	func->card->host->caps &= ~MMC_CAP_NONREMOVABLE;
-	func->card->host->caps |= MMC_CAP_NEEDS_POLL;
-	mmc_detect_change(func->card->host, 0);
+	sdio_host->caps &= ~MMC_CAP_NONREMOVABLE;
+	sdio_host->caps |= MMC_CAP_NEEDS_POLL;
+	adapter->sdio_func = NULL;
+	mmc_detect_change(sdio_host, 0);
 #endif /* SDIO_DETECT_CHANGE */
 	return -ENOMEM;
 }
@@ -174,7 +176,8 @@ fail:
 static void sdioh_remove(struct sdio_func *func)
 {
 #ifdef SDIO_DETECT_CHANGE
-	int host_idx = func->card->host->index;
+	struct mmc_host *sdio_host = func->card->host;
+	int host_idx = sdio_host->index;
 	uint32 rca = func->card->rca;
 #endif /* SDIO_DETECT_CHANGE */
 	sdioh_info_t *sdioh;
@@ -193,10 +196,10 @@ static void sdioh_remove(struct sdio_func *func)
 	osl_detach(osh);
 #ifdef SDIO_DETECT_CHANGE
 	sd_err(("%s: bus num (host idx)=%d, slot num (rca)=%d, caps=0x%x\n",
-		__FUNCTION__, host_idx, rca, func->card->host->caps));
-	func->card->host->caps &= ~MMC_CAP_NONREMOVABLE;
-	func->card->host->caps |= MMC_CAP_NEEDS_POLL;
-	mmc_detect_change(func->card->host, 0);
+		__FUNCTION__, host_idx, rca, sdio_host->caps));
+	sdio_host->caps &= ~MMC_CAP_NONREMOVABLE;
+	sdio_host->caps |= MMC_CAP_NEEDS_POLL;
+	mmc_detect_change(sdio_host, 0);
 #endif /* SDIO_DETECT_CHANGE */
 }
 
