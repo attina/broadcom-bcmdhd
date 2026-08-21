@@ -614,7 +614,11 @@ static int wl_cfg80211_is_wfa_cap_ie(wlcfg_assoc_info_t *info, struct bcm_cfg802
 /*
  * cfg80211_ops api/callback list
  */
-static s32 wl_cfg80211_set_wiphy_params(struct wiphy *wiphy, u32 changed);
+static s32 wl_cfg80211_set_wiphy_params(struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	int radio_idx,
+#endif
+	u32 changed);
 #ifdef WLAIBSS_MCHAN
 static bcm_struct_cfgdev* bcm_cfg80211_add_ibss_if(struct wiphy *wiphy, char *name);
 static s32 bcm_cfg80211_del_ibss_if(struct wiphy *wiphy, bcm_struct_cfgdev *cfgdev);
@@ -646,17 +650,31 @@ static s32 wl_cfg80211_disconnect(struct wiphy *wiphy, struct net_device *dev,
 #if defined(WL_CFG80211_P2P_DEV_IF)
 static s32
 wl_cfg80211_set_tx_power(struct wiphy *wiphy, struct wireless_dev *wdev,
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	int radio_idx,
+	#endif
 	enum nl80211_tx_power_setting type, s32 mbm);
 #else
 static s32
 wl_cfg80211_set_tx_power(struct wiphy *wiphy,
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	struct wireless_dev *wdev, int radio_idx,
+	#endif
 	enum nl80211_tx_power_setting type, s32 dbm);
 #endif /* WL_CFG80211_P2P_DEV_IF */
 #if defined(WL_CFG80211_P2P_DEV_IF)
 static s32 wl_cfg80211_get_tx_power(struct wiphy *wiphy,
-	struct wireless_dev *wdev, s32 *dbm);
+	struct wireless_dev *wdev,
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	int radio_idx, unsigned int link_id,
+	#endif
+	s32 *dbm);
 #else
-static s32 wl_cfg80211_get_tx_power(struct wiphy *wiphy, s32 *dbm);
+static s32 wl_cfg80211_get_tx_power(struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	struct wireless_dev *wdev, int radio_idx, unsigned int link_id,
+#endif
+	s32 *dbm);
 #endif /* WL_CFG80211_P2P_DEV_IF */
 static s32 wl_cfg80211_config_default_key(struct wiphy *wiphy,
 	struct net_device *dev,
