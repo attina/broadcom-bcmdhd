@@ -3612,8 +3612,15 @@ static s32 wl_set_retry(struct net_device *dev, u32 retry, bool l)
 	return err;
 }
 
-static s32 wl_cfg80211_set_wiphy_params(struct wiphy *wiphy, u32 changed)
+static s32 wl_cfg80211_set_wiphy_params(struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	int radio_idx,
+#endif
+	u32 changed)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	(void)radio_idx;
+#endif
 	struct bcm_cfg80211 *cfg = (struct bcm_cfg80211 *)wiphy_priv(wiphy);
 	struct net_device *ndev = bcmcfg_to_prmry_ndev(cfg);
 	s32 err = 0;
@@ -7947,12 +7954,22 @@ exit:
 static s32
 #if defined(WL_CFG80211_P2P_DEV_IF)
 wl_cfg80211_set_tx_power(struct wiphy *wiphy, struct wireless_dev *wdev,
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	int radio_idx,
+	#endif
 	enum nl80211_tx_power_setting type, s32 mbm)
 #else
 wl_cfg80211_set_tx_power(struct wiphy *wiphy,
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	struct wireless_dev *wdev, int radio_idx,
+	#endif
 	enum nl80211_tx_power_setting type, s32 dbm)
 #endif /* WL_CFG80211_P2P_DEV_IF */
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	(void)wdev;
+	(void)radio_idx;
+#endif
 
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct net_device *ndev = bcmcfg_to_prmry_ndev(cfg);
@@ -7996,11 +8013,26 @@ wl_cfg80211_set_tx_power(struct wiphy *wiphy,
 static s32
 #if defined(WL_CFG80211_P2P_DEV_IF)
 wl_cfg80211_get_tx_power(struct wiphy *wiphy,
-	struct wireless_dev *wdev, s32 *dbm)
+	struct wireless_dev *wdev,
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	int radio_idx, unsigned int link_id,
+	#endif
+	s32 *dbm)
 #else
-wl_cfg80211_get_tx_power(struct wiphy *wiphy, s32 *dbm)
+wl_cfg80211_get_tx_power(struct wiphy *wiphy,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	struct wireless_dev *wdev, int radio_idx, unsigned int link_id,
+#endif
+	s32 *dbm)
 #endif /* WL_CFG80211_P2P_DEV_IF */
 {
+#if defined(WL_CFG80211_P2P_DEV_IF) || LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	(void)wdev;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	(void)radio_idx;
+	(void)link_id;
+#endif
+#endif
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct net_device *ndev = bcmcfg_to_prmry_ndev(cfg);
 	s32 err = 0;
