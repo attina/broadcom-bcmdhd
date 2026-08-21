@@ -83,6 +83,7 @@
 #include <linux/kconfig.h>
 #endif
 #include <linux/module.h>
+#include <linux/timer.h>
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 0))
 /* __NO_VERSION__ must be defined for all linkables except one in 2.2 */
