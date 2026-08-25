@@ -907,7 +907,7 @@ void
 dhd_conf_set_nv_name_by_chip(dhd_pub_t *dhd, char *nv_path)
 {
 	uint chip, chiprev;
-	char *name_ptr, *module_name = NULL, nv_name[32];
+	char *name_ptr, *module_name = NULL, nv_name[MOD_PARAM_PATHLEN];
 	int i;
 
 	chip = dhd->conf->chip;
